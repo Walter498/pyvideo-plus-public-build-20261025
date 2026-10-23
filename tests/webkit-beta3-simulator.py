@@ -106,7 +106,7 @@ def main():
          '-Wno-unused-parameter', '-Wno-deprecated-declarations', '-I', P / 'src',
          P / 'tests/webkit-beta3-ui.m', P / 'src/Images.m', wrapper, '-o', app / 'WebKitBeta3',
          '-framework', 'Foundation', '-framework', 'UIKit', '-framework', 'WebKit',
-         '-framework', 'ImageIO', '-framework', 'UniformTypeIdentifiers', '-framework', 'AVFoundation'])
+         '-framework', 'ImageIO', '-framework', 'UniformTypeIdentifiers', '-framework', 'AVFoundation', '-framework', 'CoreMedia', '-framework', 'CoreGraphics'])
     run(['codesign', '--force', '--sign', '-', app])
     devices = json.loads(run(['xcrun', 'simctl', 'list', 'devices', 'available', '--json']))['devices']
     phones = [dict(d, runtime=runtime) for runtime, group in devices.items() for d in group
