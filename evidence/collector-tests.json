@@ -1,6 +1,6 @@
 {
   "scope": "Node VM simulated DOM only; not Safari/WebKit runtime",
-  "passed": 14,
+  "passed": 19,
   "results": [
     {
       "name": "HTTP IMG discovered",
@@ -23,7 +23,7 @@
       "status": "passed"
     },
     {
-      "name": "duplicate URLs collapsed",
+      "name": "duplicate image URLs collapsed",
       "status": "passed"
     },
     {
@@ -39,23 +39,43 @@
       "status": "passed"
     },
     {
-      "name": "played second video is active, not first",
+      "name": "played second video is active",
       "status": "passed"
     },
     {
-      "name": "fullscreen video identified without first candidate",
+      "name": "fullscreen video identified",
       "status": "passed"
     },
     {
-      "name": "blob active is placeholder not unrelated resource",
+      "name": "blob active not an HTTP video",
       "status": "passed"
     },
     {
-      "name": "same collector object reused on reinjection",
+      "name": "collector object reused on reinjection",
       "status": "passed"
     },
     {
       "name": "navigation clears prior active identity",
+      "status": "passed"
+    },
+    {
+      "name": "videos and images collected concurrently in separate fields",
+      "status": "passed"
+    },
+    {
+      "name": "highest numeric rendition selected deterministically",
+      "status": "passed"
+    },
+    {
+      "name": "unknown rendition height cannot override numeric source",
+      "status": "passed"
+    },
+    {
+      "name": "source change reflected in exact fresh frame snapshot",
+      "status": "passed"
+    },
+    {
+      "name": "video candidate cap bounded300",
       "status": "passed"
     }
   ]

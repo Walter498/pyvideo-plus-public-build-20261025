@@ -61,11 +61,15 @@ int main(void) {
         MockAgent *a = [MockAgent new]; a.workerMode=YES; a.reconciled=YES; a.memoryReady=YES;
         NSString *u=@"550E8400-E29B-41D4-A716-446655440000", *v=@"550E8400-E29B-41D4-A716-446655440001";
         a.tasks=[@{u:Task(u),v:Task(v)} mutableCopy]; a.exports=[NSMutableSet set];
-        assert(Automatic());
+        Export(a,@selector(exportReady)); assert(ExportCalls==0);
         MockWrite(@{@"autoSavePhotos":@NO}, Path(@"plus-preferences.plist"), NULL);
         Export(a,@selector(exportReady)); assert(ExportCalls==0); assert(a.exports.count==0);
         Request(v); Export(a,@selector(exportReady));
-        assert(ExportCalls==1 && [LastID isEqual:v]); assert([a.tasks[u][@"state"] isEqual:@"ready"]);
+        assert(ExportCalls==0 && !LastID); assert([a.tasks[u][@"state"] isEqual:@"ready"]);
+        assert([a.tasks[v][@"state"] isEqual:@"ready"]);
+        assert(![NSFileManager.defaultManager fileExistsAtPath:Path([NSString stringWithFormat:@"plus-manual-photos/%@.plist",v])]);
+        // A Beta2 transaction was already active before the new hook took over.
+        a.tasks[v][@"state"]=@"saving"; [a.exports addObject:v];
         assert(TasksView(a,@selector(tasks))==a.tasks); assert(!ViewOwner && !ViewTasks);
         [@"original video" writeToFile:Media(v) atomically:YES encoding:NSUTF8StringEncoding error:NULL];
         Finish(a,NULL,v,YES,nil,@"asset-123");
@@ -73,9 +77,11 @@ int main(void) {
         assert([a.tasks[v][@"savedAt"] isEqual:@123]);
         assert([NSFileManager.defaultManager fileExistsAtPath:Path([NSString stringWithFormat:@"retained/%@.mp4",v])]);
         assert(![NSFileManager.defaultManager fileExistsAtPath:Media(v)]);
-        Request(v); Export(a,@selector(exportReady)); assert(ExportCalls==1); // saved duplicate denied
-        a.tasks[v][@"state"]=@"uncertain"; Request(v); Export(a,@selector(exportReady)); assert(ExportCalls==1);
-        Request(u); Export(a,@selector(exportReady)); assert(ExportCalls==2);
+        Request(v); Export(a,@selector(exportReady)); assert(ExportCalls==0); // saved duplicate denied
+        a.tasks[v][@"state"]=@"uncertain"; Request(v); Export(a,@selector(exportReady)); assert(ExportCalls==0);
+        Request(u); Export(a,@selector(exportReady)); assert(ExportCalls==0);
+        assert([a.tasks[u][@"state"] isEqual:@"ready"]);
+        a.tasks[u][@"state"]=@"saving"; [a.exports addObject:u];
         [@"second original" writeToFile:Media(u) atomically:YES encoding:NSUTF8StringEncoding error:NULL];
         // Retained destination collision exercises narrow fallback in actual hook.
         [@"collision" writeToFile:Path([NSString stringWithFormat:@"retained/%@.mp4",u]) atomically:YES encoding:NSUTF8StringEncoding error:NULL];
@@ -86,9 +92,17 @@ int main(void) {
         a.tasks[u][@"state"]=@"saving"; [a.exports addObject:u];
         Finish(a,NULL,u,NO,nil,nil); assert(!SimulatedSuccess && FinishCalls==3);
         [@"invalid" writeToFile:Path(@"plus-preferences.plist") atomically:YES encoding:NSUTF8StringEncoding error:NULL];
-        assert(Automatic());
+        Export(a,@selector(exportReady)); assert(ExportCalls==0);
+        for (id value in @[@YES,@NO,@1,@"YES"]) {
+            MockWrite(@{@"autoSavePhotos":value}, Path(@"plus-preferences.plist"), NULL);
+            a.tasks[u][@"state"]=@"ready";
+            Request(u); Export(a,@selector(exportReady));
+            assert(ExportCalls==0 && [a.tasks[u][@"state"] isEqual:@"ready"]);
+            assert(![NSFileManager.defaultManager fileExistsAtPath:Path([NSString stringWithFormat:@"plus-manual-photos/%@.plist",u])]);
+        }
+        Tick(); assert(ExportCalls==0);
         assert(!Signature(MockAgent.class,@selector(tasks),"v",0,NULL));
         [NSFileManager.defaultManager removeItemAtPath:TestRoot error:NULL];
-        puts("PASS mock: autoOFF, UUID filter, view restoration, saved/uncertain denial, retained success, collision fallback, TLS restoration, failure passthrough, malformed prefs, ABI rejection");
+        puts("PASS production hooks: absent/YES/NO/malformed prefs never enter OldExport; obsolete manual commands dropped; ready jobs retained; active Beta2 success retention/collision fallback/failure passthrough; TLS restoration; ABI rejection");
     }
 }

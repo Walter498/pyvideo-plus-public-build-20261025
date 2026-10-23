@@ -38,7 +38,23 @@ assert data[32+sz:32+sz+cmdsize]==bytes(cmdsize)
 cmd=struct.pack('<IIIIII',0xc,cmdsize,24,0,0,0)+name;cmd+=bytes(cmdsize-len(cmd))
 data[32+sz:32+sz+cmdsize]=cmd;struct.pack_into('<II',data,16,n+1,sz+cmdsize);assert data[0x4000:]==originalAgent[0x4000:]
 agent.write_bytes(data)
-subprocess.run(['ldid','-S'+str(P/'worker/entitlements.plist'),str(agent)],check=True)
+subprocess.run(['ldid','-Icom.crctdd.pyvideo','-S'+str(P/'worker/entitlements.plist'),str(agent)],check=True)
+# libSandy keys AllowedProcesses by CodeDirectory identifier, not Info.plist.
+def signing_identifiers(binary):
+ b=Path(binary).read_bytes();n=struct.unpack_from('<I',b,16)[0];pos=32;off=None
+ for _ in range(n):
+  cmd,size=struct.unpack_from('<II',b,pos)
+  if cmd==0x1d:off=struct.unpack_from('<I',b,pos+8)[0]
+  pos+=size
+ assert off is not None,'missing LC_CODE_SIGNATURE'
+ magic,length,count=struct.unpack_from('>III',b,off);assert magic==0xfade0cc0
+ out=[]
+ for i in range(count):
+  slot,relative=struct.unpack_from('>II',b,off+12+i*8);p=off+relative
+  if struct.unpack_from('>I',b,p)[0]!=0xfade0c02:continue
+  ident=struct.unpack_from('>I',b,p+20)[0];end=b.index(b'\0',p+ident);out.append(b[p+ident:end].decode())
+ return out
+assert signing_identifiers(agent) and all(x=='com.crctdd.pyvideo' for x in signing_identifiers(agent)),signing_identifiers(agent)
 agentpatch={'path':'Applications/PyVideoAgent.app/PyVideoAgent','change':'Add LC_LOAD_DYLIB @executable_path/PyVideoStorage.dylib and re-sign; all original code bytes verified identical','sha256':hashlib.sha256(agent.read_bytes()).hexdigest()}
 
 addon={'Filter':{'Bundles':['com.apple.mobilesafari']}}

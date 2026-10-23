@@ -137,7 +137,6 @@ static int NotificationToken;
 static _Thread_local void *ViewOwner;
 static _Thread_local void *ViewTasks;
 static _Thread_local void *ProtectedPaths;
-static BOOL InExport;
 static NSString *const Signal = @"com.crctdd.pyvideo.plus.storage";
 
 static BOOL ValidID(id value) {
@@ -153,36 +152,6 @@ static BOOL SafeDirectory(NSString *path) {
     }
     return S_ISDIR(s.st_mode) && !S_ISLNK(s.st_mode) && s.st_uid == geteuid();
 }
-static NSDictionary *ReadSmall(NSString *path) {
-    int fd = open(path.fileSystemRepresentation, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
-    if (fd < 0) return nil;
-    struct stat s;
-    if (fstat(fd, &s) || !S_ISREG(s.st_mode) || s.st_size < 8 || s.st_size > 16384) {
-        close(fd); return nil;
-    }
-    NSMutableData *data = [NSMutableData dataWithLength:(NSUInteger)s.st_size];
-    size_t count = 0;
-    while (count < data.length) {
-        ssize_t n = read(fd, (char *)data.mutableBytes + count, data.length - count);
-        if (n < 0 && errno == EINTR) continue;
-        if (n <= 0) { close(fd); return nil; }
-        count += (size_t)n;
-    }
-    close(fd);
-    if (memcmp(data.bytes, "bplist00", 8)) return nil;
-    id value = [NSPropertyListSerialization propertyListWithData:data options:NSPropertyListImmutable format:NULL error:NULL];
-    return [value isKindOfClass:NSDictionary.class] ? value : nil;
-}
-static BOOL Automatic(void) {
-    NSString *p = Path(@"plus-preferences.plist");
-    struct stat s;
-    if (lstat(p.fileSystemRepresentation, &s) && errno == ENOENT) return YES;
-    NSDictionary *prefs = ReadSmall(p);
-    id value = prefs[@"autoSavePhotos"];
-    if (prefs && !value) return YES;
-    if (!value || CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID()) return YES;
-    return [value boolValue];
-}
 static id TasksView(id self, SEL cmd) {
     if (ViewOwner == (__bridge void *)self && ViewTasks) return (__bridge id)ViewTasks;
     return OldTasks(self, cmd);
@@ -197,61 +166,33 @@ static BOOL Start(id self, SEL cmd) {
     return result;
 }
 
-// Consume at most 32 requests and examine at most 256 directory entries per pass.
-// Claim BEFORE Photos can start: crash => no automatic replay of authorization.
-static NSString *Claim(id agent, NSDictionary *tasks) {
+// Beta3: foreground system sharing is the sole export entrypoint. Drain old
+// requests without inspecting preferences or ever calling the original exporter.
+static void DropLegacyPhotos(void) {
     NSString *dir = Path(@"plus-manual-photos");
-    if (!SafeDirectory(dir)) return nil;
-    DIR *d = opendir(dir.fileSystemRepresentation);
-    if (!d) return nil;
-    NSString *selected = nil;
-    unsigned scanned = 0, processed = 0;
+    if (!SafeDirectory(dir)) return;
+    int fd = open(dir.fileSystemRepresentation, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (fd < 0) return;
+    DIR *d = fdopendir(fd);
+    if (!d) { close(fd); return; }
+    unsigned scanned = 0;
     struct dirent *entry;
-    while (scanned++ < 256 && processed < 32 && (entry = readdir(d))) {
+    while (scanned++ < 256 && (entry = readdir(d))) {
         NSString *name = [[NSString alloc] initWithUTF8String:entry->d_name];
-        if (![name.pathExtension isEqual:@"plist"] || !ValidID(name.stringByDeletingPathExtension)) continue;
-        processed++;
-        NSString *p = [dir stringByAppendingPathComponent:name];
-        NSDictionary *request = ReadSmall(p);
-        NSString *uuid = request[@"id"];
-        id created = request[@"created"];
-        double age = [created isKindOfClass:NSNumber.class] ? NSDate.date.timeIntervalSince1970 - [created doubleValue] : INFINITY;
-        NSDictionary *task = ValidID(uuid) ? tasks[uuid] : nil;
-        NSString *state = task[@"state"];
-        BOOL valid = [uuid isEqual:name.stringByDeletingPathExtension] && isfinite(age) && age >= -60 && age <= 86400;
-        // Never replay saved, saving, uncertain, albumFailed or control transitions.
-        if (!valid || !task || ![@[@"ready", @"queued", @"downloading", @"hls", @"remuxing", @"checking", @"converting"] containsObject:state]) {
-            unlink(p.fileSystemRepresentation); continue;
-        }
-        if (![state isEqual:@"ready"] || [agent exports].count) continue;
-        NSString *claim = [p stringByAppendingString:@".claimed"];
-        // Atomic exclusive claim; unlike rename it cannot replace an old crash claim.
-        if (link(p.fileSystemRepresentation, claim.fileSystemRepresentation)) continue;
-        unlink(p.fileSystemRepresentation);
-        selected = uuid;
-        break;
+        NSString *leaf = [name hasSuffix:@".claimed"] ? name.stringByDeletingPathExtension : name;
+        if ([leaf.pathExtension isEqual:@"plist"] && ValidID(leaf.stringByDeletingPathExtension))
+            unlinkat(fd,name.fileSystemRepresentation,0);
     }
+    fsync(fd);
     closedir(d);
-    return selected;
 }
 static void Export(id self, SEL cmd) {
-    // Observed original entrypoints all run on main; refuse unknown concurrency.
-    if (!NSThread.isMainThread || InExport || ![self workerMode]) return;
+    (void)cmd;
+    if (!NSThread.isMainThread || ![self workerMode]) return;
     Worker = self;
-    if (![self reconciled] || ![self memoryReady] || [self clearingRequest] || [self exports].count) return;
-    NSMutableDictionary *tasks = OldTasks(self, @selector(tasks));
-    if (![tasks isKindOfClass:NSMutableDictionary.class]) return;
-    BOOL automatic = Automatic();
-    NSString *uuid = Claim(self, tasks);
-    if (!automatic && !uuid) return;
-    NSMutableDictionary *view = uuid ? [@{uuid: tasks[uuid]} mutableCopy] : tasks;
-    InExport = YES;
-    ViewOwner = (__bridge void *)self; ViewTasks = (__bridge void *)view;
-    @try { OldExport(self, cmd); }
-    @finally {
-        ViewOwner = NULL; ViewTasks = NULL; InExport = NO;
-        if (uuid) unlink(Path([NSString stringWithFormat:@"plus-manual-photos/%@.plist.claimed", uuid]).fileSystemRepresentation);
-    }
+    DropLegacyPhotos();
+    // OldExport is intentionally NEVER entered. Already active Beta2 saves are
+    // still finalized by Finish, preserving original/compatible retention hooks.
 }
 
 static BOOL Remove(id self, SEL cmd, NSString *path, NSError **error) {

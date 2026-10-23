@@ -16,8 +16,10 @@ jobs:
         run: python3 build-macos.py
       - name: Test storage hooks and disk retention
         run: sh tests/storage-beta2/check.sh
-      - name: Render same-source UIKit preview in iOS Simulator
-        run: python3 preview-macos.py
+      - name: Test production metadata and file actions
+        run: sh tests/export-beta3-check.sh
+      - name: Run real WebKit collection and production UIKit flows
+        run: python3 tests/webkit-beta3-simulator.py
       - uses: actions/upload-artifact@v4
         with:
           name: pyvideo-plus-arm64e
@@ -26,6 +28,9 @@ jobs:
             build/PyVideoPhotoWorker
             build/PyVideoStorage.dylib
             build/cloud-build.json
-            build/downloads-preview.png
+            tests/webkit-beta3-output/**/result.txt
+            tests/webkit-beta3-output/**/artifacts.json
+            tests/webkit-beta3-output/**/*.png
+            tests/webkit-beta3-output/**/source-sha256.json
             evidence/collector-tests.json
           if-no-files-found: error

@@ -129,10 +129,22 @@ static void PVXMenuImageAdded(__unused const struct mach_header *header, __unuse
     PVXQueueMenuInstallation();
 }
 
+static IMP PVXOldBarSetMenu;
+static UIMenu *PVXRemoveOriginalTabAction(UIMenu *menu) {
+    if (![menu isKindOfClass:UIMenu.class]) return menu;
+    BOOL changed=NO; NSMutableArray *items=[NSMutableArray array];
+    for (UIMenuElement *item in menu.children) {
+        if ([item isKindOfClass:UIAction.class] && [((UIAction*)item).identifier isEqualToString:@"com.crctdd.pyvideo.download-video"]) { changed=YES; continue; }
+        if ([item isKindOfClass:UIMenu.class]) { UIMenu *nested=PVXRemoveOriginalTabAction((UIMenu*)item);changed|=nested!=item;[items addObject:nested]; } else [items addObject:item];
+    }
+    return changed?[menu menuByReplacingChildren:items]:menu;
+}
+static void PVXBarSetMenu(id self,SEL command,id menu) { ((void(*)(id,SEL,id))PVXOldBarSetMenu)(self,command,PVXRemoveOriginalTabAction(menu)); }
 void PVXInstallMenuHooks(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         if (![NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.apple.mobilesafari"]) return;
+        PVXHook(UIBarButtonItem.class,@selector(setMenu:),(IMP)PVXBarSetMenu,&PVXOldBarSetMenu);
         // Includes already loaded images and later-loaded Safari frameworks.
         _dyld_register_func_for_add_image(PVXMenuImageAdded);
         PVXQueueMenuInstallation();

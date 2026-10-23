@@ -1,6 +1,5 @@
 // Independent PyVideo image worker. ARC / iOS 15+. No original-worker symbols.
 #import <Foundation/Foundation.h>
-#import <Photos/Photos.h>
 #import <ImageIO/ImageIO.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <dispatch/dispatch.h>
@@ -167,7 +166,7 @@ static NSDictionary *PVXRequest(NSDictionary *d, NSString *uuid) {
 
 @interface PVXPhotoWorker : NSObject <NSURLSessionDownloadDelegate>
 @property NSString *root;
-@property int rootFD, inboxFD, tasksFD, mediaFD, photosFD, lockFD;
+@property int rootFD, inboxFD, tasksFD, mediaFD, photosFD, controlFD, lockFD;
 @property NSMutableDictionary<NSString *,PVXImageJob *> *jobs;
 @property NSMutableDictionary<NSNumber *,PVXImageJob *> *active;
 @property NSURLSession *session;
@@ -181,7 +180,7 @@ static NSDictionary *PVXRequest(NSDictionary *d, NSString *uuid) {
 
 @implementation PVXPhotoWorker
 - (instancetype)init {
-    if ((self = [super init])) { _rootFD = _inboxFD = _tasksFD = _mediaFD = _photosFD = _lockFD = -1; _notifyToken = -1;
+    if ((self = [super init])) { _rootFD = _inboxFD = _tasksFD = _mediaFD = _photosFD = _controlFD = _lockFD = -1; _notifyToken = -1;
         _jobs = [NSMutableDictionary dictionary]; _active = [NSMutableDictionary dictionary]; }
     return self;
 }
@@ -189,7 +188,7 @@ static NSDictionary *PVXRequest(NSDictionary *d, NSString *uuid) {
     j.state[@"updated"] = @(NSDate.date.timeIntervalSince1970);
     if (!PVXWrite(self.tasksFD,PVXFile(j.state[@"id"]),j.state)) {
         self.diskFailed = YES;
-        // No new Photos transaction may begin without its durable saving marker.
+        // Stop scheduling when a durable task transition cannot be written.
         fprintf(stderr,"PyVideoPhotoWorker: task persistence failed\n");
         return NO;
     }
@@ -197,6 +196,7 @@ static NSDictionary *PVXRequest(NSDictionary *d, NSString *uuid) {
     return YES;
 }
 - (void)fail:(PVXImageJob *)j reason:(NSString *)reason {
+    if ([@[@"deleting",@"deleted"] containsObject:j.state[@"state"]]) return;
     j.ready = NO; j.state[@"state"] = @"failed"; j.state[@"error"] = reason;
     [self persist:j];
 }
@@ -206,7 +206,7 @@ static NSDictionary *PVXRequest(NSDictionary *d, NSString *uuid) {
 - (BOOL)validSnapshot:(NSDictionary *)s uuid:(NSString *)uuid {
     if (!PVXKeys(s,@[@"id",@"url",@"title",@"page",@"created",@"updated",@"state",@"received",@"total",@"error",@"assetID",@"savedAt",@"uti",@"extension",@"manualPhotos"]) ||
         ![s[@"id"] isEqual:uuid] || !PVXString(s[@"state"],20) ||
-        ![@[@"queued",@"downloading",@"ready",@"saving",@"saved",@"failed",@"uncertain"] containsObject:s[@"state"]] ||
+        ![@[@"queued",@"downloading",@"ready",@"saving",@"saved",@"failed",@"uncertain",@"deleting",@"deleted"] containsObject:s[@"state"]] ||
         !PVXString(s[@"title"],1024) || !PVXString(s[@"url"],16384) || !PVXString(s[@"page"],16384) ||
         !PVXNumber(s[@"created"]) || !PVXNumber(s[@"updated"]) || !PVXNumber(s[@"received"]) || !PVXNumber(s[@"total"]) ||
         [s[@"received"] doubleValue] < 0 || [s[@"received"] doubleValue] > PVXMaxBytes || [s[@"total"] doubleValue] < -1 ||
@@ -227,7 +227,8 @@ static NSDictionary *PVXRequest(NSDictionary *d, NSString *uuid) {
     if (!PVXDirectory([self.root stringByAppendingPathComponent:@"image-inbox"],&_inboxFD) ||
         !PVXDirectory([self.root stringByAppendingPathComponent:@"image-tasks"],&_tasksFD) ||
         !PVXDirectory([self.root stringByAppendingPathComponent:@"image-media"],&_mediaFD) ||
-        !PVXDirectory([self.root stringByAppendingPathComponent:@"plus-image-photos"],&_photosFD)) return NO;
+        !PVXDirectory([self.root stringByAppendingPathComponent:@"plus-image-photos"],&_photosFD) ||
+        !PVXDirectory([self.root stringByAppendingPathComponent:@"plus-image-control"],&_controlFD)) return NO;
     self.lockFD = openat(self.mediaFD,".worker.lock",O_RDWR|O_CREAT|O_NOFOLLOW|O_CLOEXEC,0600);
     struct stat lockStat;
     if (self.lockFD < 0 || fstat(self.lockFD,&lockStat) || !S_ISREG(lockStat.st_mode) || lockStat.st_uid != geteuid() || lockStat.st_nlink != 1 || fchmod(self.lockFD,0600) || flock(self.lockFD,LOCK_EX|LOCK_NB)) return NO;
@@ -246,7 +247,9 @@ static NSDictionary *PVXRequest(NSDictionary *d, NSString *uuid) {
         }
         j.state = [s mutableCopy]; self.jobs[uuid] = j;
         NSString *state = s[@"state"];
-        if ([state isEqual:@"saving"]) {
+        if ([state isEqual:@"deleting"] || [state isEqual:@"deleted"]) {
+            [self finishDeletion:j];
+        } else if ([state isEqual:@"saving"]) {
             j.state[@"state"] = @"uncertain";
             j.state[@"error"] = @"保存相册时中断，请先核对相册，避免重复保存";
             [self persist:j];
@@ -295,6 +298,9 @@ static NSDictionary *PVXRequest(NSDictionary *d, NSString *uuid) {
 }
 - (void)scan {
     if (self.stopping || self.diskFailed) return;
+    [self scanControls];
+    for (PVXImageJob *j in self.jobs.allValues)
+        if ([j.state[@"state"] isEqual:@"deleting"]) [self finishDeletion:j];
     for (NSString *name in [self names:@"image-inbox"]) {
         NSString *uuid = name.stringByDeletingPathExtension;
         if (![name.pathExtension isEqual:@"plist"] || !PVXID(uuid) || self.jobs[uuid]) continue;
@@ -330,13 +336,8 @@ static NSDictionary *PVXRequest(NSDictionary *d, NSString *uuid) {
     }
     if (!ok) fprintf(stderr,"PyVideoPhotoWorker: saved-file cleanup incomplete\n");
 }
-// Shared preference is read on every pump, so queue notifications and the 2s
-// polling timer both observe changes. Only a genuine plist boolean overrides YES.
-- (BOOL)autoSavePhotos {
-    id value = PVXRead(self.rootFD,@"plus-preferences.plist")[@"autoSavePhotos"];
-    return [value isKindOfClass:NSNumber.class] &&
-        CFGetTypeID((__bridge CFTypeRef)value) == CFBooleanGetTypeID() ? [value boolValue] : YES;
-}
+// Beta3: preference files and legacy manual intent never authorize Photos.
+- (BOOL)autoSavePhotos { return NO; }
 - (BOOL)restoreOriginal:(PVXImageJob *)j {
     j.mediaName = [j.state[@"id"] stringByAppendingString:@".original"];
     int fd = openat(self.mediaFD,j.mediaName.fileSystemRepresentation,O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC);
@@ -350,27 +351,58 @@ static NSDictionary *PVXRequest(NSDictionary *d, NSString *uuid) {
     return YES;
 }
 - (void)scanManualPhotos {
-    for (NSString *name in [self names:@"plus-image-photos"]) {
-        NSString *uuid = name.stringByDeletingPathExtension;
-        if (![name.pathExtension isEqual:@"plist"] || !PVXID(uuid)) continue;
-        NSDictionary *command = PVXRead(self.photosFD,name);
-        if (!PVXKeys(command,@[@"id",@"created"]) || ![command[@"id"] isEqual:uuid] ||
-            !PVXNumber(command[@"created"]) || [command[@"created"] doubleValue] < 0) continue;
-        PVXImageJob *j = self.jobs[uuid];
-        if (!j) continue; // Producer may race inbox publication; retry next scan.
-        NSString *state = j.state[@"state"];
-        if ([state isEqual:@"saved"] || [state isEqual:@"saving"] || [state isEqual:@"uncertain"]) {
-            PVXRemove(self.photosFD,name); continue; // Never retry an ambiguous commit.
-        }
-        if ([state isEqual:@"failed"]) {
-            if (!j.state[@"uti"] || ![self restoreOriginal:j]) { PVXRemove(self.photosFD,name); continue; }
-            j.state[@"state"] = @"ready"; j.ready = YES;
-            [j.state removeObjectForKey:@"error"];
-        }
-        j.state[@"manualPhotos"] = @YES;
-        // Persist before consuming command, so a crash cannot lose manual intent.
+    // Obsolete commands are consumed even if their task has not arrived yet.
+    for (NSString *name in [self names:@"plus-image-photos"])
+        if ([name.pathExtension isEqual:@"plist"] && PVXID(name.stringByDeletingPathExtension))
+            PVXRemove(self.photosFD,name);
+    for (PVXImageJob *j in self.jobs.allValues) {
+        if (!j.state[@"manualPhotos"]) continue;
+        [j.state removeObjectForKey:@"manualPhotos"];
         if (![self persist:j]) return;
-        PVXRemove(self.photosFD,name);
+    }
+}
+- (void)finishDeletion:(PVXImageJob *)j {
+    // All callers and URLSession delegates run on main. Detach BEFORE cancel so
+    // late progress/completion callbacks cannot find or mutate this task.
+    NSURLSessionDownloadTask *task = j.task;
+    if (task) [self.active removeObjectForKey:@(task.taskIdentifier)];
+    j.task = nil; j.ready = NO; j.request = nil;
+    [task cancel];
+    NSString *uuid = j.state[@"id"];
+    BOOL inbox = PVXRemove(self.inboxFD,PVXFile(uuid));
+    BOOL media = PVXRemove(self.mediaFD,[uuid stringByAppendingString:@".original"]);
+    BOOL manual = PVXRemove(self.photosFD,PVXFile(uuid));
+    j.state[@"url"] = @""; j.state[@"page"] = @"";
+    [j.state removeObjectForKey:@"manualPhotos"];
+    j.state[@"state"] = inbox && media && manual ? @"deleted" : @"deleting";
+    if (inbox && media && manual) [j.state removeObjectForKey:@"error"];
+    else j.state[@"error"] = @"图片删除未完成，将重试清理";
+    [self persist:j];
+}
+- (void)scanControls {
+    for (NSString *name in [self names:@"plus-image-control"]) {
+        NSString *requestID = name.stringByDeletingPathExtension;
+        if (![name.pathExtension isEqual:@"plist"] || !PVXID(requestID)) continue;
+        NSDictionary *c = PVXRead(self.controlFD,name);
+        if (!PVXKeys(c,@[@"id",@"target",@"action",@"created"]) ||
+            !PVXID(c[@"id"]) || ![c[@"id"] isEqual:requestID] || !PVXID(c[@"target"]) ||
+            ![c[@"action"] isEqual:@"delete"] || !PVXNumber(c[@"created"]) || [c[@"created"] doubleValue] < 0) continue;
+        NSString *uuid = c[@"target"];
+        PVXImageJob *j = self.jobs[uuid];
+        if (!j) {
+            // Pending inbox deletion also gets a permanent UUID tombstone.
+            j = [PVXImageJob new];
+            j.state = [@{@"id":uuid,@"url":@"",@"title":@"",@"page":@"",@"created":c[@"created"],
+                @"updated":@0,@"received":@0,@"total":@(-1)} mutableCopy];
+            self.jobs[uuid] = j;
+        }
+        j.state[@"state"] = @"deleting";
+        j.state[@"url"] = @""; j.state[@"page"] = @"";
+        [j.state removeObjectForKey:@"manualPhotos"];
+        if (![self persist:j]) return; // Never remove bytes before durable intent.
+        [self finishDeletion:j];
+        if (self.diskFailed) return;
+        PVXRemove(self.controlFD,name); // deleting snapshot owns cleanup retries.
     }
 }
 - (NSMutableURLRequest *)requestFor:(PVXImageJob *)j target:(NSURL *)url {
@@ -427,10 +459,7 @@ static NSDictionary *PVXRequest(NSDictionary *d, NSString *uuid) {
 - (void)pump {
     if (self.stopping || self.diskFailed) return;
     NSArray *ordered = [self orderedJobs];
-    BOOL automatic = [self autoSavePhotos];
-    if (!self.saving) {
-        for (PVXImageJob *j in ordered) if (j.ready && !j.task && (automatic || [j.state[@"manualPhotos"] boolValue])) { [self save:j]; break; }
-    }
+    // Ready originals remain exportable; no background Photos scheduling.
     for (PVXImageJob *j in ordered) {
         if (self.active.count >= 2 || self.diskFailed) break;
         if (![j.state[@"state"] isEqual:@"queued"] || !j.request) continue;
@@ -466,7 +495,7 @@ static NSDictionary *PVXRequest(NSDictionary *d, NSString *uuid) {
 }
 - (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)task didWriteData:(int64_t)bytesWritten totalBytesWritten:(int64_t)written totalBytesExpectedToWrite:(int64_t)expected {
     PVXImageJob *j = self.active[@(task.taskIdentifier)];
-    if (!j) { [task cancel]; return; }
+    if (!j || [@[@"deleting",@"deleted"] containsObject:j.state[@"state"]]) { [task cancel]; return; }
     if (written < 0 || (uint64_t)written > PVXMaxBytes || (expected > 0 && (uint64_t)expected > PVXMaxBytes)) {
         j.failure = @"图片超过 100 MiB 限制"; [task cancel]; return;
     }
@@ -505,7 +534,8 @@ static NSDictionary *PVXRequest(NSDictionary *d, NSString *uuid) {
 }
 - (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)task didFinishDownloadingToURL:(NSURL *)location {
     PVXImageJob *j = self.active[@(task.taskIdentifier)];
-    if (!j || self.stopping || j.failure || self.diskFailed) return;
+    if (!j || self.stopping || j.failure || self.diskFailed ||
+        [@[@"deleting",@"deleted"] containsObject:j.state[@"state"]]) return;
     NSHTTPURLResponse *r = (id)task.response;
     if (![r isKindOfClass:NSHTTPURLResponse.class] || r.statusCode < 200 || r.statusCode >= 300) { j.failure = @"图片服务器返回失败"; return; }
     NSString *mime = r.MIMEType.lowercaseString;
@@ -533,6 +563,7 @@ static NSDictionary *PVXRequest(NSDictionary *d, NSString *uuid) {
     PVXImageJob *j = self.active[@(task.taskIdentifier)];
     if (!j) return;
     [self.active removeObjectForKey:@(task.taskIdentifier)]; j.task = nil;
+    if ([@[@"deleting",@"deleted"] containsObject:j.state[@"state"]]) { [self pump]; return; }
     if (!j.ready) {
         if (self.stopping) { j.state[@"state"] = @"queued"; [self persist:j]; }
         else [self fail:j reason:j.failure ?: (error ? [NSString stringWithFormat:@"图片下载网络错误（%ld）",(long)error.code] : @"下载未生成有效图片")];
@@ -540,74 +571,8 @@ static NSDictionary *PVXRequest(NSDictionary *d, NSString *uuid) {
     [self pump];
     if (self.stopping && !self.active.count && !self.saving) exit(0);
 }
-- (void)save:(PVXImageJob *)j {
-    if (self.saving || j.task || !j.ready || self.stopping || self.diskFailed) return;
-    if (![self autoSavePhotos] && ![j.state[@"manualPhotos"] boolValue]) return;
-    self.saving = YES;
-    void (^authorized)(PHAuthorizationStatus) = ^(PHAuthorizationStatus status) {
-        dispatch_async(dispatch_get_main_queue(),^{
-            if (self.stopping || self.diskFailed) {
-                self.saving = NO;
-                if (self.stopping && !self.active.count) exit(0);
-                return;
-            }
-            // Recheck preference after the asynchronous authorization callback.
-            if (![self autoSavePhotos] && ![j.state[@"manualPhotos"] boolValue]) {
-                self.saving = NO; [self pump]; return;
-            }
-            if (status != PHAuthorizationStatusAuthorized && status != PHAuthorizationStatusLimited) {
-                self.saving = NO; [self fail:j reason:@"暂无添加相册权限，请在前台授权；原图已保留"];
-                [self pump]; return;
-            }
-            NSURL *file = [NSURL fileURLWithPath:[[self.root stringByAppendingPathComponent:@"image-media"] stringByAppendingPathComponent:j.mediaName]];
-            // Revalidate after waiting behind a Photos transaction/permission UI.
-            int fd = openat(self.mediaFD,j.mediaName.fileSystemRepresentation,O_RDONLY|O_NOFOLLOW|O_CLOEXEC);
-            struct stat st;
-            BOOL valid = fd >= 0 && !fstat(fd,&st) && S_ISREG(st.st_mode) && st.st_uid == geteuid() &&
-                st.st_nlink == 1 && st.st_size > 0 && (uint64_t)st.st_size <= PVXMaxBytes;
-            if (fd >= 0) close(fd);
-            if (!valid || ![self verify:file job:j]) {
-                self.saving = NO; [self fail:j reason:@"保留的图片不存在或已损坏"]; [self pump]; return;
-            }
-            [j.state removeObjectForKey:@"manualPhotos"];
-            j.state[@"state"] = @"saving"; j.ready = NO;
-            if (![self persist:j]) { self.saving = NO; return; }
-            __block NSString *assetID = nil;
-            [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^{
-                PHAssetCreationRequest *create = [PHAssetCreationRequest creationRequestForAsset];
-                PHAssetResourceCreationOptions *options = [PHAssetResourceCreationOptions new];
-                options.shouldMoveFile = NO; // Retain original for subsequent Files exports.
-                options.uniformTypeIdentifier = j.uti;
-                NSString *ext = [UTType typeWithIdentifier:j.uti].preferredFilenameExtension ?: @"img";
-                options.originalFilename = [j.state[@"id"] stringByAppendingPathExtension:ext];
-                [create addResourceWithType:PHAssetResourceTypePhoto fileURL:file options:options];
-                assetID = create.placeholderForCreatedAsset.localIdentifier;
-            } completionHandler:^(BOOL success,NSError *error) {
-                dispatch_async(dispatch_get_main_queue(),^{
-                    self.saving = NO;
-                    if (success) {
-                        j.state[@"state"] = @"saved";
-                        j.state[@"assetID"] = assetID ?: @"";
-                        j.state[@"savedAt"] = @(NSDate.date.timeIntervalSince1970);
-                        j.state[@"url"] = @""; j.state[@"page"] = @"";
-                        [j.state removeObjectForKey:@"error"];
-                        // A failed fsync leaves the old durable saving marker: restart
-                        // marks uncertain rather than creating a second asset.
-                        if ([self persist:j]) [self cleanup:j retainOriginal:YES];
-                    } else {
-                        [self fail:j reason:[NSString stringWithFormat:@"保存相册失败（%ld）；原图已保留",(long)error.code]];
-                    }
-                    [self pump];
-                    if (self.stopping && !self.active.count) exit(0);
-                });
-            }];
-        });
-    };
-    PHAuthorizationStatus status = [PHPhotoLibrary authorizationStatusForAccessLevel:PHAccessLevelAddOnly];
-    // A background helper must not prompt for Photos access. Provision private
-    // PhotosAdd / foreground authorization externally; retain bytes on failure.
-    authorized(status);
-}
+// Kept as an inert compatibility selector. Foreground sharing owns all exports.
+- (void)save:(PVXImageJob *)j { (void)j; }
 - (void)shutdown {
     if (self.stopping) return;
     self.stopping = YES;

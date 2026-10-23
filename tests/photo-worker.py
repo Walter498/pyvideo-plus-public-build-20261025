@@ -40,21 +40,35 @@ def recover(state, credentials=True, original=True):
 
 
 def auto_photos(preferences):
-    value = preferences.get('autoSavePhotos')
-    return value if type(value) is bool else True
+    return False
 
 
 def eligible(state, automatic, manual=False):
-    return state == 'ready' and (automatic or manual)
+    return False
 
 
 def consume_manual(state, valid_original=True):
-    # Completed/ambiguous transactions must never be revived by a command.
-    if state in ('saved', 'saving', 'uncertain'):
-        return state, False
-    if state == 'failed':
-        return ('ready', True) if valid_original else ('failed', False)
-    return state, True
+    return state, False
+
+
+class DeleteModel:
+    def __init__(self, state):
+        self.state, self.active = state, state == 'downloading'
+        self.inbox, self.media, self.tombstone = True, True, False
+
+    def delete(self, cleanup=True):
+        self.state, self.tombstone = 'deleting', True
+        self.active = False
+        if cleanup:
+            self.inbox = self.media = False
+            self.state = 'deleted'
+
+    def callback(self):
+        if self.active:
+            self.state = 'failed'
+
+    def import_again(self):
+        return not self.tombstone
 
 
 class WorkerContract(unittest.TestCase):
@@ -116,19 +130,14 @@ class WorkerContract(unittest.TestCase):
         self.assertNotIn('UIImage', TEXT)
         self.assertNotIn('UIImageJPEGRepresentation', TEXT)
 
-    def test_05_transaction_order_and_original_bytes(self):
+    def test_05_no_photos_transaction_entrypoint(self):
+        self.assertNotIn('performChanges:', TEXT)
+        self.assertNotIn('authorizationStatusForAccessLevel:', TEXT)
+        self.assertNotIn('requestAuthorization', TEXT)
+        self.assertNotIn('PHPhotoLibrary', TEXT)
         save = TEXT.split('- (void)save:', 1)[1].split('- (void)shutdown', 1)[0]
-        self.assertLess(save.index('j.state[@"state"] = @"saving"'), save.index('performChanges:'))
-        self.assertLess(save.index('if (![self persist:j])'), save.index('performChanges:'))
-        self.assertIn('PHAssetResourceTypePhoto fileURL:file', save)
-        self.assertIn('options.shouldMoveFile = NO', save)
-        self.assertIn('if ([self persist:j]) [self cleanup:j retainOriginal:YES]', save)
-        self.assertNotIn('requestAuthorizationForAccessLevel:', save)
-        self.assertNotIn('buffered', TEXT)
-        self.assertIn('PHAccessLevelAddOnly', save)
+        self.assertIn('(void)j;', save)
         self.assertIn('self.active.count >= 2', TEXT)
-        self.assertIn('j.ready && !j.task', TEXT)
-        self.assertIn('self.saving = YES', save)
 
     def test_06_persistence_and_privacy_guards(self):
         for token in ['O_NOFOLLOW','O_EXCL','st.st_nlink != 1',
@@ -149,33 +158,24 @@ class WorkerContract(unittest.TestCase):
         self.assertNotIn('"_jbroot"', TEXT)
         self.assertIn('if (!map) return nil', TEXT)
 
-    def test_07_preference_binary_bool_contract(self):
-        for value, expected in [(None, True), (False, False), (True, True),
-                                (0, True), (1, True), ('NO', True)]:
+    def test_07_all_old_preferences_are_ignored(self):
+        for value in (None, False, True, 0, 1, 'NO', 'YES', [], {}):
             prefs = {} if value is None else {'autoSavePhotos': value}
             roundtrip = plistlib.loads(plistlib.dumps(prefs, fmt=plistlib.FMT_BINARY))
-            self.assertEqual(auto_photos(roundtrip), expected)
+            self.assertFalse(auto_photos(roundtrip))
         pref = TEXT.split('- (BOOL)autoSavePhotos {', 1)[1].split('- (BOOL)restoreOriginal:', 1)[0]
-        self.assertIn('CFBooleanGetTypeID()', pref)
-        self.assertIn('plus-preferences.plist', pref)
+        self.assertIn('return NO;', pref)
+        self.assertNotIn('plus-preferences.plist', TEXT)
 
-    def test_08_manual_is_per_job_and_crash_safe(self):
-        jobs = ['ready'] * 100
-        commands = {37}
-        selected = [i for i, state in enumerate(jobs)
-                    if eligible(state, False, i in commands)]
-        self.assertEqual(selected, [37])
-        for state in ('saved', 'saving', 'uncertain'):
+    def test_08_legacy_manual_commands_are_dropped(self):
+        for state in ('queued', 'downloading', 'ready', 'saved', 'saving', 'failed', 'uncertain', 'deleted'):
             self.assertEqual(consume_manual(state), (state, False))
-            self.assertFalse(eligible(state, True, True))
-        self.assertEqual(consume_manual('failed'), ('ready', True))
-        self.assertEqual(consume_manual('failed', False), ('failed', False))
-        # A crash before commit preserves intent; after durable saving it blocks retries.
-        state, manual = consume_manual('ready')
-        self.assertTrue(eligible(recover(state, credentials=False), False, manual))
-        self.assertFalse(eligible(recover('saving'), False, manual))
-        scan = TEXT.split('- (void)scanManualPhotos {', 1)[1].split('- (NSMutableURLRequest *)requestFor:', 1)[0]
-        self.assertLess(scan.index('if (![self persist:j])'), scan.rindex('PVXRemove(self.photosFD,name)'))
+            for automatic in (False, True):
+                self.assertFalse(eligible(state, automatic, True))
+        scan = TEXT.split('- (void)scanManualPhotos {', 1)[1].split('- (void)finishDeletion:', 1)[0]
+        self.assertIn('PVXRemove(self.photosFD,name)', scan)
+        self.assertIn('[j.state removeObjectForKey:@"manualPhotos"]', scan)
+        self.assertNotIn('@YES', scan)
 
     def test_09_ready_queue_does_not_starve_downloads(self):
         # Records can accumulate on disk without tying downloaded bytes to RAM
@@ -191,11 +191,12 @@ class WorkerContract(unittest.TestCase):
             active = 0
         self.assertEqual(ready_count, 10013)
         self.assertFalse(any(eligible('ready', False) for _ in range(ready_count)))
-        self.assertTrue(eligible('ready', True))
+        self.assertFalse(eligible('ready', True))
         pump = TEXT.split('- (void)pump {', 1)[1].split('- (void)URLSession:', 1)[0]
         self.assertNotIn('buffered', pump)
         self.assertIn('self.active.count >= 2', pump)
-        self.assertIn('automatic || [j.state[@"manualPhotos"] boolValue]', pump)
+        self.assertNotIn('[self save:', pump)
+        self.assertNotIn('manualPhotos', pump)
         downloaded = TEXT.split('didFinishDownloadingToURL:', 1)[1].split('didCompleteWithError:', 1)[0]
         self.assertLess(downloaded.index('fsync(self.mediaFD)'), downloaded.index('j.state[@"state"] = @"ready"'))
         self.assertIn('j.state[@"url"] = @""; j.state[@"page"] = @""', downloaded)
@@ -210,6 +211,49 @@ class WorkerContract(unittest.TestCase):
         verify = TEXT.split('- (BOOL)verify:', 1)[1].split('didFinishDownloadingToURL:', 1)[0]
         self.assertIn('j.state[@"uti"] = j.uti', verify)
         self.assertIn('uti.preferredFilenameExtension', verify)
+
+    def test_11_delete_active_pending_ready_and_late_callbacks(self):
+        for state in ('queued', 'downloading', 'ready', 'failed', 'saved', 'uncertain'):
+            m = DeleteModel(state)
+            m.delete()
+            m.callback()
+            self.assertEqual(m.state, 'deleted')
+            self.assertFalse(m.media or m.inbox or m.import_again())
+        delete = TEXT.split('- (void)finishDeletion:', 1)[1].split('- (void)scanControls', 1)[0]
+        self.assertLess(delete.index('removeObjectForKey:@(task.taskIdentifier)'), delete.index('[task cancel]'))
+        self.assertIn('PVXRemove(self.inboxFD,PVXFile(uuid))', delete)
+        self.assertIn('stringByAppendingString:@".original"', delete)
+        for method in ('didFinishDownloadingToURL:', 'didCompleteWithError:'):
+            body = TEXT.split(method, 1)[1].split('- (void)', 1)[0]
+            self.assertIn('self.active[@(task.taskIdentifier)]', body)
+            self.assertIn('if (!j', body)
+
+    def test_12_delete_recovery_and_failed_cleanup_retry(self):
+        m = DeleteModel('downloading')
+        m.delete(cleanup=False)
+        m.callback()
+        self.assertEqual(m.state, 'deleting')
+        m.delete()
+        self.assertEqual(m.state, 'deleted')
+        self.assertFalse(m.import_again())
+        self.assertIn('[state isEqual:@"deleting"] || [state isEqual:@"deleted"]', TEXT)
+        controls = TEXT.split('- (void)scanControls {', 1)[1].split('- (NSMutableURLRequest *)requestFor:', 1)[0]
+        self.assertLess(controls.index('if (![self persist:j]) return'), controls.index('[self finishDeletion:j]'))
+        self.assertIn('@"deleting",@"deleted"] containsObject:', TEXT)
+
+    def test_13_control_binary_plist_contract(self):
+        import uuid
+        request_id, target = str(uuid.uuid4()), str(uuid.uuid4())
+        c = dict(id=request_id, target=target, action='delete', created=100.0)
+        blob = plistlib.dumps(c, fmt=plistlib.FMT_BINARY)
+        self.assertEqual(plistlib.loads(blob), c)
+        self.assertLess(len(blob), 2 * 1024 * 1024)
+        controls = TEXT.split('- (void)scanControls {', 1)[1].split('- (NSMutableURLRequest *)requestFor:', 1)[0]
+        for guard in ('PVXRead(self.controlFD,name)', 'PVXID(c[@"target"])',
+                      'PVXNumber(c[@"created"])', '[c[@"id"] isEqual:requestID]',
+                      'PVXKeys(c,@[@"id",@"target",@"action",@"created"])'):
+            self.assertIn(guard, controls)
+        self.assertIn('plus-image-control', TEXT)
 
 
 if __name__ == '__main__':
