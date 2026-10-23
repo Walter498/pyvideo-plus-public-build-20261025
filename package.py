@@ -29,6 +29,9 @@ for name in ['PyVideoPlus.dylib','PyVideoPhotoWorker','PyVideoStorage.dylib']:
 place(P/'build/PyVideoPlus.dylib','Library/MobileSubstrate/DynamicLibraries/PyVideoPlus.dylib',0o755)
 place(P/'build/PyVideoPhotoWorker','Applications/PyVideoAgent.app/PyVideoPhotoWorker',0o755)
 place(P/'resources/MediaCollector.js','Library/Application Support/PyVideo/MediaCollector.js')
+for depiction in (P/'depiction').rglob('*'):
+ if depiction.is_file():place(depiction,Path('Library/Application Support/PyVideo/depiction')/depiction.relative_to(P/'depiction'))
+
 place(P/'build/PyVideoStorage.dylib','Applications/PyVideoAgent.app/PyVideoStorage.dylib',0o755)
 # Add only one load command in known zero header padding; preserve every code byte.
 agent=STAGE/'Applications/PyVideoAgent.app/PyVideoAgent'
@@ -65,7 +68,7 @@ addon={'Filter':{'Bundles':['com.apple.mobilesafari']}}
 (STAGE/'Library/MobileSubstrate/DynamicLibraries/PyVideoPlus.plist').write_bytes(plistlib.dumps(addon,fmt=plistlib.FMT_BINARY))
 job={'Label':'com.crctdd.pyvideo.photo-worker','ProgramArguments':['/Applications/PyVideoAgent.app/PyVideoPhotoWorker','--worker'],'UserName':'mobile','RunAtLoad':True,'KeepAlive':True,'ThrottleInterval':10,'ProcessType':'Background','JetsamProperties':{'JetsamMemoryLimit':192}}
 photo=STAGE/'Library/LaunchDaemons/com.crctdd.pyvideo.photo-worker.plist';photo.write_bytes(plistlib.dumps(job,fmt=plistlib.FMT_BINARY));photo.chmod(0o644)
-control=STAGE/'DEBIAN/control';raw=control.read_text();raw=raw.replace('Name: PyVideo\n','Name: PyVideo Plus\n').replace('Version: 0.0.3\n','Version: 0.0.3+pvx.3~beta3\n');start=raw.index('Description:');end=raw.index('Maintainer:',start);raw=raw[:start]+'''Description: PyVideo 增强测试版：搜索栏长按入口、播放器当前视频下载、网页图片多选原格式下载。保留原视频插件引擎；iOS 15-17 arm64e/roothide，新增菜单需真机验证。\n'''+raw[end:];control.write_text(raw)
+control=STAGE/'DEBIAN/control';raw=control.read_text();raw=raw.replace('Name: PyVideo\n','Name: Safari亚瑟下载\n').replace('Version: 0.0.3\n','Version: 1.0\n');start=raw.index('Description:');end=raw.index('Maintainer:',start);raw=raw[:start]+'''Description: 让Safari获得某些类似亚瑟浏览器的功能，能够在画中画中直接下载影片，或者在网站中采集图片及影片以下载，长按搜索栏或点击画中画中的菜单开始使用\n'''+raw[end:];raw=re.sub(r'^Author: .*$', 'Author: 水甲嫩鸡', raw, flags=re.M);raw=re.sub(r'^Maintainer: .*$', 'Maintainer: 水甲嫩鸡', raw, flags=re.M);raw+='Depiction: file:///Library/Application%20Support/PyVideo/depiction/index.html\n';control.write_text(raw)
 post=STAGE/'DEBIAN/postinst';text=post.read_text();assert text.endswith('exit 0\n');text=text[:-7]+'''pv_stage=photo-storage-permissions
 for pv_child in image-inbox image-tasks image-media; do
   if [ -d "$pv_data/$pv_child" ]; then
@@ -92,7 +95,7 @@ for original in (ORIG/'rootfs').rglob('*'):
   assert original.read_bytes()==(STAGE/rel).read_bytes(),rel
   unchanged.append(str(rel))
 for script in ['postinst','prerm','postrm']:subprocess.run(['sh','-n',str(STAGE/'DEBIAN'/script)],check=True)
-out=DIST/'PyVideo-0.0.3-pvx3-beta3-iphoneos-arm64e.deb'
+out=DIST/'Safari-Arthur-Downloads-1.0-iphoneos-arm64e.deb'
 # The iOS shared filesystem ignores chmod; archive modes must be explicit.
 modes={}
 for archive,prefix in [('data',''),('control','DEBIAN/')]:

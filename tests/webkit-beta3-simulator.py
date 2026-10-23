@@ -104,9 +104,9 @@ def main():
          '-mios-simulator-version-min=16.0', '-isysroot', sdk, '-DPVX_TEST=1',
          '-fobjc-arc', '-fblocks', '-Wall', '-Wextra', '-Werror',
          '-Wno-unused-parameter', '-Wno-deprecated-declarations', '-I', P / 'src',
-         P / 'tests/webkit-beta3-ui.m', P / 'src/Images.m', P / 'src/MediaPreview.m', wrapper, '-o', app / 'WebKitBeta3',
+         P / 'tests/webkit-beta3-ui.m', P / 'src/Images.m', P / 'src/MediaPreview.m', P / 'src/MediaQuality.m', wrapper, '-o', app / 'WebKitBeta3',
          '-framework', 'Foundation', '-framework', 'UIKit', '-framework', 'WebKit',
-         '-framework', 'ImageIO', '-framework', 'UniformTypeIdentifiers', '-framework', 'AVFoundation', '-framework', 'CoreMedia', '-framework', 'CoreGraphics', '-framework', 'AVKit', '-framework', 'AVFAudio'])
+         '-framework', 'ImageIO', '-framework', 'UniformTypeIdentifiers', '-framework', 'AVFoundation', '-framework', 'CoreMedia', '-framework', 'CoreGraphics', '-framework', 'AVKit', '-framework', 'AVFAudio', '-framework', 'QuartzCore'])
     run(['codesign', '--force', '--sign', '-', app])
     devices = json.loads(run(['xcrun', 'simctl', 'list', 'devices', 'available', '--json']))['devices']
     phones = [dict(d, runtime=runtime) for runtime, group in devices.items() for d in group

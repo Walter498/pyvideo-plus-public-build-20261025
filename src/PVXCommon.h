@@ -42,4 +42,7 @@ FOUNDATION_EXPORT void PVXUpdateTaskMetadata(NSArray<NSDictionary*> *tasks, NSSt
 FOUNDATION_EXPORT NSString * _Nullable PVXTaskLocalPath(NSDictionary *task);
 FOUNDATION_EXPORT NSDictionary *PVXStorageSummary(void);
 FOUNDATION_EXPORT void PVXDeleteTasks(NSArray<NSDictionary*> *tasks, void(^completion)(NSString * _Nullable error));
+FOUNDATION_EXPORT void PVXRememberSource(NSDictionary *candidate, NSDictionary *receipt);
+FOUNDATION_EXPORT NSDictionary * _Nullable PVXLinkedTask(NSDictionary *candidate, NSArray<NSDictionary*> *tasks);
+FOUNDATION_EXPORT void PVXFetchMediaQuality(NSDictionary *row, void(^done)(NSString *quality));
 NS_ASSUME_NONNULL_END

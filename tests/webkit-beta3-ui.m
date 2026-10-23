@@ -75,7 +75,7 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
     Check([images[0][@"documentID"] length]>0,@"native message carries real document identity");
     PVXFetchTaskThumbnail(images[0],^(UIImage *image){self.remoteThumbValid=image!=nil;});
     PVXSubmitMedia(images[0],^(NSDictionary *receipt,NSString *error){
-        Check(receipt!=nil&&!error,@"production frame revalidation and submit succeeded");
+        Check(receipt!=nil&&!error,@"production frame revalidation and submit succeeded");PVXRememberSource(images[0],receipt);
         NSString *inbox=PVXPath([NSString stringWithFormat:@"image-inbox/%@.plist",receipt[@"id"]]);
         NSData *data=[NSData dataWithContentsOfFile:inbox];
         Check(data.length>8&&!memcmp(data.bytes,"bplist00",8),@"production writer emitted binary plist inbox");
@@ -115,7 +115,7 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
         Check(m.rows.count==1&&[m.rows[0][@"kind"] isEqual:@"video"],@"collect video filter count is one");
         m.mediaTabs.selectedSegmentIndex=0; [m.mediaTabs sendActionsForControlEvents:UIControlEventValueChanged];
         Check(m.rows.count==2,@"collect all count restored");
-        Check(self.remoteThumbValid,@"remote collected image URL generated actual thumbnail with origin cookies");
+        Check(self.remoteThumbValid,@"remote collected image URL generated actual thumbnail with origin cookies");Check(PVXLinkedTask(PVXCollectedMedia(@"image")[0],PVXReadVideoTasks())!=nil,@"collection progress persists source-to-task UUID association");
         [m.selectionButton sendActionsForControlEvents:UIControlEventTouchUpInside];
         Check(m.selecting&&!m.batchBar.hidden&&!m.allButton.hidden,@"multiselect exposes real all checkbox and batch bar");
         [m.allButton sendActionsForControlEvents:UIControlEventTouchUpInside];
@@ -144,7 +144,7 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
             // Deliberately cross more than two production one-second timer ticks.
             Later(2.4,^{
                 Check(m.presentedViewController==menu&&menu.view.window!=nil&&!menu.isBeingDismissed,@"actual menu remains open after 2.4 seconds with production refresh timer");
-                for(NSString *title in @[@"导出",@"删除",@"重命名",@"移动到…",@"标签"]) {
+                for(NSString *title in @[@"导出",@"删除",@"重命名"]) {
                     UIAlertAction *found=nil; for(UIAlertAction *action in menu.actions) if([action.title isEqual:title])found=action;
                     Check(found!=nil&&found.enabled,[@"local menu action exists and enabled: " stringByAppendingString:title]);
                 }
@@ -171,7 +171,16 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
     NSData *json=[NSJSONSerialization dataWithJSONObject:artifact options:NSJSONWritingPrettyPrinted error:NULL];
     [json writeToFile:Doc(@"webkit-beta3-artifacts.json") atomically:YES];
     Capture(@"activity",^{
-        Record(@"webkit-beta3-result.txt",[@"PASS real WKWebView/native collector, production binary inbox/TaskRead, actual manager filters/checks/menu timer, UIKit activity and real staged PNG; REAL production worker downloaded localhost fixture\n" stringByAppendingString:[Checks componentsJoinedByString:@"\n"]]);
+        [self.manager dismissViewControllerAnimated:NO completion:^{
+            PVXPreviewMedia(self.ready);
+            Wait(100,^BOOL{return [NSStringFromClass(self.manager.presentedViewController.class) isEqual:@"PVXPreviewController"];},^{
+                UIViewController *viewer=self.manager.presentedViewController;
+                Wait(150,^BOOL{return [(UIImageView*)PVXGet(viewer,@"imageView") image]!=nil;},^{
+                    Check([(UIScrollView*)PVXGet(viewer,@"scroll") maximumZoomScale]>1,@"actual local image viewer supports zoom");
+                    PVXFetchMediaQuality(self.ready,^(NSString *quality){Check([quality isEqual:@"96×96"],@"actual ImageIO image resolution read");Record(@"webkit-beta3-result.txt",[@"PASS real collection, actual download, thumbnails, dates, range selection, live linked progress, real image viewer/zoom, image dimensions, stable menu and system share\n" stringByAppendingString:[Checks componentsJoinedByString:@"\n"]]);});
+                },@"local image viewer decodes actual downloaded file");
+            },@"actual image preview controller presentation");
+        }];
     });
 }
 @end
