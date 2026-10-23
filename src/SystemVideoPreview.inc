@@ -7,6 +7,7 @@
 @property(nonatomic,copy) NSString *previousCategory,*previousMode;
 @property(nonatomic) AVAudioSessionCategoryOptions previousOptions;
 @property(nonatomic) BOOL audioActive,observing,started,pipStarting,pipActive,restoring,finished;
+@property(nonatomic) NSTimeInterval cleanupAfter;
 - (void)finish;
 @end
 static NSMutableSet<PVXSystemVideoSession*> *PVXNativeVideos;
@@ -30,7 +31,7 @@ static char PVXNativeItemContext;
 - (void)playerViewControllerDidStartPictureInPicture:(AVPlayerViewController*)controller {self.pipStarting=NO;self.pipActive=YES;}
 - (void)playerViewController:(AVPlayerViewController*)controller failedToStartPictureInPictureWithError:(NSError*)error {self.pipStarting=NO;self.pipActive=NO;PVXAlert(@"画中画未启动",error.localizedDescription?:@"系统暂不支持此视频的画中画。");}
 - (BOOL)playerViewControllerShouldAutomaticallyDismissAtPictureInPictureStart:(AVPlayerViewController*)controller {return YES;}
-- (void)playerViewControllerDidStopPictureInPicture:(AVPlayerViewController*)controller {self.pipStarting=NO;self.pipActive=NO;if(!self.restoring&&!controller.presentingViewController&&!controller.viewIfLoaded.window)[self finish];}
+- (void)playerViewControllerDidStopPictureInPicture:(AVPlayerViewController*)controller {self.pipStarting=NO;self.pipActive=NO;self.cleanupAfter=NSDate.date.timeIntervalSince1970+2;}
 - (void)playerViewController:(AVPlayerViewController*)controller restoreUserInterfaceForPictureInPictureStopWithCompletionHandler:(void(^)(BOOL))completion {
     if(self.finished){completion(NO);return;}
     if(controller.presentingViewController&&controller.viewIfLoaded.window){completion(YES);return;}
@@ -44,7 +45,7 @@ static char PVXNativeItemContext;
     __weak typeof(self)weak=self;
     [coordinator animateAlongsideTransition:nil completion:^(id<UIViewControllerTransitionCoordinatorContext> context){
         if(context.isCancelled)return;
-        dispatch_async(dispatch_get_main_queue(),^{if(weak.started&&!weak.pipActive&&!weak.pipStarting&&!weak.restoring&&!controller.presentingViewController&&!controller.viewIfLoaded.window)[weak finish];});
+        dispatch_async(dispatch_get_main_queue(),^{if(weak.started&&NSDate.date.timeIntervalSince1970>=weak.cleanupAfter&&!weak.pipActive&&!weak.pipStarting&&!weak.restoring&&!controller.presentingViewController&&!controller.viewIfLoaded.window)[weak finish];});
     }];
 }
 @end
@@ -76,17 +77,20 @@ static void PVXPresentSystemVideo(NSURL *url,NSDictionary *options) {
     [PVXNativeVideos addObject:session];
     session.observing=YES;
     [session.item addObserver:session forKeyPath:@"status" options:NSKeyValueObservingOptionNew context:&PVXNativeItemContext];
+    session.cleanupAfter=NSDate.date.timeIntervalSince1970+5;
+    __weak PVXSystemVideoSession *weak=session;
+    session.timer=[NSTimer timerWithTimeInterval:.5 repeats:YES block:^(NSTimer *timer){
+        PVXSystemVideoSession *s=weak;if(!s||NSDate.date.timeIntervalSince1970<s.cleanupAfter)return;
+        if(!s.pipStarting&&!s.pipActive&&!s.restoring&&!s.controller.isBeingPresented&&!s.controller.isBeingDismissed&&!s.controller.presentingViewController&&!s.controller.viewIfLoaded.window)[s finish];
+    }];
+    [NSRunLoop.mainRunLoop addTimer:session.timer forMode:NSRunLoopCommonModes];
     [presenter presentViewController:controller animated:YES completion:^{
-        session.started=YES;
+        if(session.finished)return;
+        session.started=YES;session.cleanupAfter=0;
         [controller.player play];
-        __weak PVXSystemVideoSession *weak=session;
-        session.timer=[NSTimer timerWithTimeInterval:.5 repeats:YES block:^(NSTimer *timer){PVXSystemVideoSession *s=weak;if(!s)return;if(s.started&&!s.pipStarting&&!s.pipActive&&!s.restoring&&!s.controller.presentingViewController&&!s.controller.viewIfLoaded.window)[s finish];}];
-        [NSRunLoop.mainRunLoop addTimer:session.timer forMode:NSRunLoopCommonModes];
     }];
 }
-static void PVXOpenSystemVideo(NSDictionary *row) {
-    NSString *path=PVXTaskLocalPath(row);
-    if(path.length){PVXPresentSystemVideo([NSURL fileURLWithPath:path],@{});return;}
+static void PVXOpenRemoteSystemVideo(NSDictionary *row) {
     WKWebView *web=PVXCollectionWebView();
     NSURL *url=[NSURL URLWithString:[row[@"url"] isKindOfClass:NSString.class]?row[@"url"]:@""];
     NSString *frame=[row[@"frame"] isKindOfClass:NSString.class]?row[@"frame"]:row[@"page"];
@@ -105,5 +109,18 @@ static void PVXOpenSystemVideo(NSDictionary *row) {
             if(headers.count)options[@"AVURLAssetHTTPHeaderFieldsKey"]=headers;
             finished=YES;PVXPresentSystemVideo(url,options);
         });}];
+    });
+}
+
+static void PVXOpenSystemVideo(NSDictionary *row) {
+    __weak UIViewController *origin=PVXPresenter();
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
+        NSString *path=PVXTaskLocalPath(row);
+        dispatch_async(dispatch_get_main_queue(),^{
+            UIViewController *host=origin;
+            if(!host||host!=PVXPresenter()||!host.viewIfLoaded.window||host.isBeingDismissed)return;
+            if(path.length)PVXPresentSystemVideo([NSURL fileURLWithPath:path],@{});
+            else PVXOpenRemoteSystemVideo(row);
+        });
     });
 }

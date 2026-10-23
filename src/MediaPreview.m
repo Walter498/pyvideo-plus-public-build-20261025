@@ -46,9 +46,15 @@ static BOOL PVXPreviewCookie(NSHTTPCookie *c,NSURL *url){NSString *d=c.domain.lo
 - (void)showImage {
     self.scroll=[[UIScrollView alloc] initWithFrame:self.view.bounds]; self.scroll.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight; self.scroll.delegate=self; self.scroll.minimumZoomScale=1; self.scroll.maximumZoomScale=6; self.scroll.backgroundColor=UIColor.blackColor; [self.view insertSubview:self.scroll atIndex:0];
     self.imageView=[UIImageView new]; self.imageView.contentMode=UIViewContentModeScaleAspectFit; self.imageView.frame=self.scroll.bounds; self.imageView.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight; [self.scroll addSubview:self.imageView];
-    NSString *path=PVXTaskLocalPath(self.row);
-    if (path.length) { struct stat st; if (lstat(path.fileSystemRepresentation,&st)||!S_ISREG(st.st_mode)||st.st_size<=0) { [self showError:@"本地图片文件不可用。"]; return; } dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{ UIImage *image=PVXPreviewImage([NSURL fileURLWithPath:path]); dispatch_async(dispatch_get_main_queue(),^{ if(!self.isViewLoaded)return; if(image)self.imageView.image=image; else [self showError:@"图片格式无法预览。"]; }); }); return; }
-    [self fetchRemoteImage];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
+        NSString *path=PVXTaskLocalPath(self.row);
+        UIImage *image=path.length?PVXPreviewImage([NSURL fileURLWithPath:path]):nil;
+        dispatch_async(dispatch_get_main_queue(),^{
+            if(!self.isViewLoaded||self.isBeingDismissed)return;
+            if(path.length){if(image)self.imageView.image=image;else [self showError:@"本地图片文件不可用或格式无法预览。"];}
+            else [self fetchRemoteImage];
+        });
+    });
 }
 - (void)fetchRemoteImage {
     WKWebView *web=PVXCollectionWebView(); NSURL *url=[NSURL URLWithString:[self.row[@"url"] isKindOfClass:NSString.class]?self.row[@"url"]:@""]; NSURL *page=[NSURL URLWithString:[self.row[@"page"] isKindOfClass:NSString.class]?self.row[@"page"]:@""];
