@@ -40,6 +40,7 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
 @property(nonatomic,strong) PVXManager *manager;
 @property(nonatomic,copy) NSDictionary *ready;
 @property(nonatomic) BOOL started;
+@property(nonatomic) BOOL remoteThumbValid;
 @property(nonatomic,strong) id worker;
 @end
 @implementation PVXWebKitTestApp
@@ -72,6 +73,7 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
     Check(images.count==1&&videos.count==1,@"real collected types: one image and one video");
     Check([images[0][@"url"] hasSuffix:@"/real.png"]&&[videos[0][@"url"] hasSuffix:@"/real.mp4"],@"real DOM URLs preserved");
     Check([images[0][@"documentID"] length]>0,@"native message carries real document identity");
+    PVXFetchTaskThumbnail(images[0],^(UIImage *image){self.remoteThumbValid=image!=nil;});
     PVXSubmitMedia(images[0],^(NSDictionary *receipt,NSString *error){
         Check(receipt!=nil&&!error,@"production frame revalidation and submit succeeded");
         NSString *inbox=PVXPath([NSString stringWithFormat:@"image-inbox/%@.plist",receipt[@"id"]]);
@@ -113,6 +115,7 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
         Check(m.rows.count==1&&[m.rows[0][@"kind"] isEqual:@"video"],@"collect video filter count is one");
         m.mediaTabs.selectedSegmentIndex=0; [m.mediaTabs sendActionsForControlEvents:UIControlEventValueChanged];
         Check(m.rows.count==2,@"collect all count restored");
+        Check(self.remoteThumbValid,@"remote collected image URL generated actual thumbnail with origin cookies");
         [m.selectionButton sendActionsForControlEvents:UIControlEventTouchUpInside];
         Check(m.selecting&&!m.batchBar.hidden&&!m.allButton.hidden,@"multiselect exposes real all checkbox and batch bar");
         [m.allButton sendActionsForControlEvents:UIControlEventTouchUpInside];
@@ -124,6 +127,7 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
         Check(m.selection.count==1&&[m selectedRows].count==1,@"actual row checkbox updates batch count");
         [m.allButton sendActionsForControlEvents:UIControlEventTouchUpInside]; Check(m.selection.count==2,@"select all restores both actual rows");
         [m.allButton sendActionsForControlEvents:UIControlEventTouchUpInside]; Check(m.selection.count==0&&!m.batchExport.enabled,@"select all toggles off and disables empty batch");
+        m.rangeBase=[NSSet set];m.rangeRows=[m.rows copy];m.rangeStart=0;m.rangeSelecting=YES;[m applyRangeToRow:1];Check(m.selection.count==2,@"long press range selects downwards");[m applyRangeToRow:0];Check(m.selection.count==1,@"reverse drag contracts selected range");m.rangeSelecting=NO;m.rangeBase=[NSSet setWithArray:@[PVXRowID(m.rows[0]),PVXRowID(m.rows[1])]];[m applyRangeToRow:1];Check(m.selection.count==0,@"long press selected range deselects downwards");m.rangeRows=nil;m.rangeBase=nil;
         Capture(@"collection",^{ [self showDownloadMenu]; });
     },@"collect all actual rows");
 }
@@ -133,6 +137,7 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
     Wait(150,^BOOL{ return !m.reading&&m.rows.count==1&&[m.rows[0][@"state"] isEqual:@"ready"]; },^{
         [m.view layoutIfNeeded]; [m.table layoutIfNeeded];
         Check(m.timer.valid&&m.visible,@"production one-second refresh timer active before menu");
+        PVXMediaRow *dated=[m.table cellForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]];Check([dated.dateLabel.text hasPrefix:@"下载日期："]&&[dated.dateLabel.text containsString:@"/"]&&[dated.dateLabel.text containsString:@":"],@"real created timestamp rendered as month/day hour:minute");
         [m showMenu:@[m.rows[0]] anchor:m.selectionButton];
         Wait(80,^BOOL{ return [m.presentedViewController isKindOfClass:UIAlertController.class]; },^{
             UIAlertController *menu=(UIAlertController *)m.presentedViewController;

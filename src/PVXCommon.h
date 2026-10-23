@@ -22,6 +22,7 @@ FOUNDATION_EXPORT void PVXAlert(NSString *title, NSString *message);
 FOUNDATION_EXPORT NSDictionary * _Nullable PVXActiveVideo(void);
 FOUNDATION_EXPORT void PVXShowImages(void);
 FOUNDATION_EXPORT void PVXShowDownloads(void);
+FOUNDATION_EXPORT void PVXPreviewMedia(NSDictionary *row);
 FOUNDATION_EXPORT NSArray<NSDictionary*> *PVXReadVideoTasks(void);
 FOUNDATION_EXPORT void PVXTaskAction(NSDictionary *task, NSString *action);
 FOUNDATION_EXPORT BOOL PVXAutoSavePhotos(void);

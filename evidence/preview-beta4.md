@@ -1,0 +1,9 @@
+# Beta 4 media preview module
+
+`src/MediaPreview.m` exports `PVXPreviewMedia(NSDictionary *)` without changing any other source or build file. Parent integration should call it from the existing cover tap, passing the tapped row (never a table index or a newly selected media item).
+
+- Image: verified complete-task local file through `PVXTaskLocalPath`; decodes actual bytes with ImageIO and provides a full-screen scroll/zoom view. Collected remote image requires the live collection WebView and `PVXValidateCollected`, reuses only host-matching unexpired cookies and a bounded User-Agent, and applies a Referer only when it does not downgrade HTTPS to HTTP. Fetch is for display only, capped at 100 MiB; no task submission or Photos write.
+- Video: local complete file or the row's canonical `url` only. Remote URL is validated against the original live collection page/frame before cookies are read. Host-scoped cookies and HTTP headers are provided to `AVURLAsset`; no Safari cross-process access or inferred media fallback. Playback uses native `AVPlayerViewController` with an explicit PiP control and attempts inline PiP when currently possible. Player/audio are retained while PiP remains active; audio playback category is activated only for the preview and deactivated with notify-others on cleanup.
+- Invalid rows, stale origins, unsupported PiP, network/image decode failures, audio-session failures and player failures are surfaced as visible messages. The preview never downloads a task or saves to Photos.
+
+Validation is source inspection only in this Linux/iSH environment; Apple SDK compilation, simulator and device behavior have not been run. PiP automatic start is an attempted system capability, not guaranteed: iOS may require user action or reject it based on device, settings, media state or lifecycle. Parent owns call-site wiring and build inclusion as requested.
