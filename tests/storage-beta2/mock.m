@@ -53,6 +53,7 @@ static void Request(NSString *uuid) {
 int main(void) {
     @autoreleasepool {
         TestRoot = [NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
+        Root=MockRoot;
         assert(SafeDirectory(TestRoot)); assert(SafeDirectory(Path(@"media")));
         assert(SafeDirectory(Path(@"plus-manual-photos")));
         Root=MockRoot; Media=MockMedia; Write=MockWrite; Notify=MockNotify;
