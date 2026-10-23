@@ -16,7 +16,15 @@ BOOL PVXHook(Class cls, SEL sel, IMP repl, IMP *original) {
 }
 id PVXBrowser(void) { Class c=NSClassFromString(@"PVBrowser"); SEL s=NSSelectorFromString(@"shared"); return [c respondsToSelector:s]?((id(*)(id,SEL))objc_msgSend)(c,s):nil; }
 WKWebView *PVXCurrentWebView(void){id b=PVXBrowser();SEL s=NSSelectorFromString(@"currentWebView");id w=[b respondsToSelector:s]?((id(*)(id,SEL))objc_msgSend)(b,s):nil;return [w isKindOfClass:WKWebView.class]?w:nil;}
-NSString *PVXStateRoot(void){ typedef id(*RootFn)(void);RootFn fn=(RootFn)dlsym(RTLD_DEFAULT,"PVStateDirectory");if(fn){id p=fn();if([p isKindOfClass:NSString.class]&&[p length])return p;} typedef id(*JB)(id);JB jb=(JB)dlsym(RTLD_DEFAULT,"_Z6jbrootP8NSString");NSString *p=@"/var/mobile/Library/Application Support/com.crctdd.pyvideo";return jb?(jb(p)?:@""):p; }
+NSString *PVXStateRoot(void){
+    typedef id(*RootFn)(void);typedef id(*JB)(id);
+    static RootFn native;static JB mapper;static dispatch_once_t once;static NSString *cached;
+    static NSLock *lock;dispatch_once(&once,^{lock=[NSLock new];native=(RootFn)dlsym(RTLD_DEFAULT,"PVStateDirectory");if(!native)mapper=(JB)dlsym(RTLD_DEFAULT,"_Z6jbrootP8NSString");});
+    [lock lock];NSString *path=cached;[lock unlock];if(path)return path;
+    id resolved=native?native():(mapper?mapper(@"/var/mobile/Library/Application Support/com.crctdd.pyvideo"):nil);
+    if(![resolved isKindOfClass:NSString.class]||![resolved isAbsolutePath])return @"";
+    [lock lock];if(!cached)cached=[resolved copy];path=cached;[lock unlock];return path;
+}
 NSString *PVXResourcePath(NSString *name){typedef id(*Root)(id);Root f=(Root)dlsym(RTLD_DEFAULT,"PVRoot");NSString *p=[@"/Library/Application Support/PyVideo" stringByAppendingPathComponent:name];return f?(f(p)?:p):p;}
 static UIViewController *PVXTop(UIViewController *c){while(c){if(c.presentedViewController&&!c.presentedViewController.isBeingDismissed){c=c.presentedViewController;continue;}if([c isKindOfClass:UINavigationController.class]){c=((UINavigationController*)c).visibleViewController;continue;}if([c isKindOfClass:UITabBarController.class]){c=((UITabBarController*)c).selectedViewController;continue;}break;}return c;}
 UIViewController *PVXPresenter(void){UIWindow *best=nil;for(UIScene *scene in UIApplication.sharedApplication.connectedScenes){if(![scene isKindOfClass:UIWindowScene.class]||scene.activationState!=UISceneActivationStateForegroundActive)continue;for(UIWindow *w in ((UIWindowScene*)scene).windows){if(w.hidden||w.alpha<0.01||!w.rootViewController)continue;if(!best||w.windowLevel>best.windowLevel||w.isKeyWindow)best=w;}}return PVXTop(best.rootViewController);}

@@ -1,6 +1,9 @@
 // Real production integration: Images.m is a separate translation unit (its
 // PVXThumbnail implementation must NOT be replaced by TaskSupport's declaration).
 #define PVX_TEST 1
+#define PVX_WATCHDOG_TEST 1
+#import <AVKit/AVKit.h>
+#import <CoreVideo/CoreVideo.h>
 #import "../src/TaskSupport.m"
 #import "../src/Collection.m"
 #import "../src/DownloadsUI.m"
@@ -110,11 +113,19 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
     Wait(100,^BOOL{ return m.rows.count==2; },^{
         Check(m.table.numberOfSections==1&&[m.table numberOfRowsInSection:0]==2,@"collect all shows two actual rows");
         m.mediaTabs.selectedSegmentIndex=2; [m.mediaTabs sendActionsForControlEvents:UIControlEventValueChanged];
-        Check(m.rows.count==1&&[m.rows[0][@"kind"] isEqual:@"image"],@"collect image filter count is one");
-        m.mediaTabs.selectedSegmentIndex=1; [m.mediaTabs sendActionsForControlEvents:UIControlEventValueChanged];
-        Check(m.rows.count==1&&[m.rows[0][@"kind"] isEqual:@"video"],@"collect video filter count is one");
-        m.mediaTabs.selectedSegmentIndex=0; [m.mediaTabs sendActionsForControlEvents:UIControlEventValueChanged];
-        Check(m.rows.count==2,@"collect all count restored");
+        Wait(100,^BOOL{return m.rows.count==1&&[m.rows[0][@"kind"] isEqual:@"image"];},^{
+            Check(YES,@"collect image filter asynchronously resolves one image");
+            m.mediaTabs.selectedSegmentIndex=1;[m.mediaTabs sendActionsForControlEvents:UIControlEventValueChanged];
+            Wait(100,^BOOL{return m.rows.count==1&&[m.rows[0][@"kind"] isEqual:@"video"];},^{
+                Check(YES,@"collect video filter asynchronously resolves one video");
+                m.mediaTabs.selectedSegmentIndex=0;[m.mediaTabs sendActionsForControlEvents:UIControlEventValueChanged];
+                Wait(100,^BOOL{return m.rows.count==2;},^{[self testSelectionAfterFilters];},@"all media filter restored");
+            },@"video filter snapshot");
+        },@"image filter snapshot");
+    },@"collect all actual rows");
+}
+- (void)testSelectionAfterFilters {
+        PVXManager *m=self.manager;
         Check(self.remoteThumbValid,@"remote collected image URL generated actual thumbnail with origin cookies");Check(PVXLinkedTask(PVXCollectedMedia(@"image")[0],PVXReadVideoTasks())!=nil,@"collection progress persists source-to-task UUID association");
         [m.selectionButton sendActionsForControlEvents:UIControlEventTouchUpInside];
         Check(m.selecting&&!m.batchBar.hidden&&!m.allButton.hidden,@"multiselect exposes real all checkbox and batch bar");
@@ -129,7 +140,6 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
         [m.allButton sendActionsForControlEvents:UIControlEventTouchUpInside]; Check(m.selection.count==0&&!m.batchExport.enabled,@"select all toggles off and disables empty batch");
         m.rangeBase=[NSSet set];m.rangeRows=[m.rows copy];m.rangeStart=0;m.rangeSelecting=YES;[m applyRangeToRow:1];Check(m.selection.count==2,@"long press range selects downwards");[m applyRangeToRow:0];Check(m.selection.count==1,@"reverse drag contracts selected range");m.rangeSelecting=NO;m.rangeBase=[NSSet setWithArray:@[PVXRowID(m.rows[0]),PVXRowID(m.rows[1])]];[m applyRangeToRow:1];Check(m.selection.count==0,@"long press selected range deselects downwards");m.rangeRows=nil;m.rangeBase=nil;
         Capture(@"collection",^{ [self showDownloadMenu]; });
-    },@"collect all actual rows");
 }
 - (void)showDownloadMenu {
     PVXManager *m=self.manager;
@@ -158,6 +168,30 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
         },@"actual showMenu alert presented");
     },@"download ready row");
 }
+- (void)verifyWatchdogSnapshot {
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
+        NSString *source=PVXTaskLocalPath(self.ready);
+        for(int i=0;i<180;i++){
+            NSString *uuid=[NSString stringWithFormat:@"77777777-7777-4777-8777-%012d",i];
+            NSString *file=PVXPath([NSString stringWithFormat:@"image-media/%@.original",uuid]);
+            if(!PVXRegular(file))[NSFileManager.defaultManager copyItemAtPath:source toPath:file error:NULL];
+            Check(PVXAtomic(@{@"id":uuid,@"kind":@"image",@"title":@"Watchdog regression fixture",@"created":@1,@"state":@"ready"},PVXPath([NSString stringWithFormat:@"image-tasks/%@.plist",uuid]),NULL),@"stress task fixture created");
+        }
+        dispatch_async(dispatch_get_main_queue(),^{
+            NSUInteger readsBefore=PVXTestMainDiskReads,scansBefore=PVXTestBackgroundScans;
+            CFAbsoluteTime start=CFAbsoluteTimeGetCurrent();__block BOOL heartbeat=NO;
+            PVXRequestTaskSnapshot(^(NSArray *rows,NSDictionary *storage){
+                Check(rows.count>=182,@"large task set asynchronously scanned");
+                Check(PVXTestMainDiskReads==readsBefore,@"background task snapshot performs zero main-thread plist reads");
+                Check(PVXTestBackgroundScans>scansBefore,@"production worker queue executes disk scan");
+                Check(heartbeat,@"main-thread heartbeat runs while disk snapshot is in flight");
+                Record(@"webkit-beta3-result.txt",[@"PASS system native player and watchdog regression: exact Apple controller, real H264 playback/seek/dismiss; async large task snapshot, zero main-thread plist reads, responsive main heartbeat; existing media pipeline passed\n" stringByAppendingString:[Checks componentsJoinedByString:@"\n"]]);
+            });
+            Check(CFAbsoluteTimeGetCurrent()-start<.1,@"snapshot scheduling returns immediately without scanning on main");
+            dispatch_async(dispatch_get_main_queue(),^{heartbeat=YES;});
+        });
+    });
+}
 - (void)verifyShare {
     PVXShareSession *session=PVXShareSessions.anyObject;
     Check(self.manager.presentedViewController==session.controller&&session.controller.view.window!=nil,@"actual PVXExportTasks presents UIKit UIActivityViewController");
@@ -177,11 +211,12 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
                 UIViewController *viewer=self.manager.presentedViewController;
                 Wait(150,^BOOL{return [(UIImageView*)PVXGet(viewer,@"imageView") image]!=nil;},^{
                     Check([(UIScrollView*)PVXGet(viewer,@"scroll") maximumZoomScale]>1,@"actual local image viewer supports zoom");
-                    PVXFetchMediaQuality(self.ready,^(NSString *quality){Check([quality isEqual:@"96×96"],@"actual ImageIO image resolution read");Record(@"webkit-beta3-result.txt",[@"PASS real collection, actual download, thumbnails, dates, range selection, live linked progress, real image viewer/zoom, image dimensions, stable menu and system share\n" stringByAppendingString:[Checks componentsJoinedByString:@"\n"]]);});
+                    PVXFetchMediaQuality(self.ready,^(NSString *quality){Check([quality isEqual:@"96×96"],@"actual ImageIO image resolution read");[self verifySystemPlayerAfterImage];});
                 },@"local image viewer decodes actual downloaded file");
             },@"actual image preview controller presentation");
         }];
     });
 }
+#import "system-player-test.inc"
 @end
 int main(int argc,char **argv) { @autoreleasepool { return UIApplicationMain(argc,argv,nil,NSStringFromClass(PVXWebKitTestApp.class)); } }

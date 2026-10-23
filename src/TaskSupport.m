@@ -14,6 +14,7 @@ extern void PVXAlert(NSString *, NSString *);
 #import <fcntl.h>
 #import <unistd.h>
 #import <stdlib.h>
+#import <objc/runtime.h>
 
 static BOOL PVXUUID(id x) {
     return [x isKindOfClass:NSString.class] && [x length] == 36 &&
@@ -30,22 +31,18 @@ static NSString *PVXRoot(void) {
     const char *fixture = getenv("PVX_TEST_ROOT");
     if (fixture && *fixture) return [[NSString stringWithUTF8String:fixture] stringByResolvingSymlinksInPath];
 #endif
-    typedef id (*RootFn)(void);
-    RootFn fn = (RootFn)dlsym(RTLD_DEFAULT, "PVStateDirectory");
-    id native = fn ? fn() : nil;
-    NSMutableArray *candidates = [NSMutableArray array];
-    if ([native isKindOfClass:NSString.class] && [native length]) [candidates addObject:native];
-    NSString *configured = PVXStateRoot();
-    if (configured.length) [candidates addObject:configured];
-    // Older hosts may not export PVStateDirectory; PVXStateRoot resolves jbroot.
-    for (NSString *candidate in candidates) {
-        NSString *p = candidate.stringByStandardizingPath.stringByResolvingSymlinksInPath;
-        BOOL directory = NO;
-        if (p.isAbsolutePath && ![p isEqual:@"/"] &&
-            [NSFileManager.defaultManager fileExistsAtPath:p isDirectory:&directory] && directory) return p;
-    }
-    return nil;
+    // Resolve and validate once per process, never once per task/file.
+    static NSLock *lock;static dispatch_once_t once;static NSString *cached;
+    dispatch_once(&once, ^{lock=[NSLock new];});
+    [lock lock];NSString *root=cached;[lock unlock];if(root)return root;
+    NSString *configured=PVXStateRoot();
+    if(!configured.isAbsolutePath||[configured isEqual:@"/"])return nil;
+    NSString *candidate=configured.stringByStandardizingPath.stringByResolvingSymlinksInPath;
+    BOOL directory=NO;
+    if(![NSFileManager.defaultManager fileExistsAtPath:candidate isDirectory:&directory]||!directory)return nil;
+    [lock lock];if(!cached)cached=[candidate copy];root=cached;[lock unlock];return root;
 }
+static char PVXResolvedFileKey;
 static BOOL PVXContained(NSString *path, NSString *root) {
     if (!root.length || !path.length) return NO;
     NSString *prefix = [root stringByAppendingString:@"/"];
@@ -57,7 +54,14 @@ static NSString *PVXPath(NSString *relative) {
     NSString *p = root ? [root stringByAppendingPathComponent:relative] : nil;
     return PVXContained(p, root) ? p : nil;
 }
+#if defined(PVX_WATCHDOG_TEST)
+static NSUInteger PVXTestMainDiskReads;
+static NSUInteger PVXTestBackgroundScans;
+#endif
 static NSDictionary *PVXPlist(NSString *path) {
+#if defined(PVX_WATCHDOG_TEST)
+    if(NSThread.isMainThread)PVXTestMainDiskReads++;
+#endif
     if (!path.length || !PVXContained(path, PVXRoot())) return nil;
     int fd = open(path.fileSystemRepresentation, O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC);
     if (fd < 0) return nil;
@@ -116,6 +120,8 @@ static BOOL PVXComplete(NSDictionary *task) {
     return [@[@"ready", @"saved", @"albumFailed", @"uncertain", @"completed"] containsObject:task[@"state"]];
 }
 NSString *PVXTaskLocalPath(NSDictionary *task) {
+    id prepared=objc_getAssociatedObject(task,&PVXResolvedFileKey);
+    if(prepared)return [prepared isKindOfClass:NSString.class]?prepared:nil;
     NSString *uuid = task[@"id"];
     if (!PVXUUID(uuid) || !PVXComplete(task)) return nil;
     NSString *organized = PVXOrganized(uuid, PVXMetadata(uuid));
@@ -128,7 +134,7 @@ NSString *PVXTaskLocalPath(NSDictionary *task) {
     for (NSString *relative in paths) { NSString *p = PVXPath(relative); if (PVXRegular(p)) return p; }
     return nil;
 }
-BOOL PVXTaskHasLocalFile(NSDictionary *task) { return PVXTaskLocalPath(task) != nil; }
+BOOL PVXTaskHasLocalFile(NSDictionary *task) { id prepared=objc_getAssociatedObject(task,&PVXResolvedFileKey);if(prepared)return [prepared isKindOfClass:NSString.class];if([task[@"hasLocalFile"] isKindOfClass:NSNumber.class])return [task[@"hasLocalFile"] boolValue];return PVXTaskLocalPath(task)!=nil; }
 BOOL PVXAutoSavePhotos(void) { return NO; }
 void PVXSetAutoSavePhotos(BOOL enabled) { (void)enabled; }
 #if !defined(PVX_FOUNDATION_TEST)
@@ -152,7 +158,10 @@ static NSMutableDictionary *PVXPublicRow(NSDictionary *raw, NSString *kind) {
     if (!row[@"title"]) row[@"title"] = [kind isEqual:@"image"] ? @"图片" : @"视频";
     return row;
 }
-NSArray<NSDictionary *> *PVXReadVideoTasks(void) {
+static NSArray<NSDictionary *> *PVXScanVideoTasks(void) {
+#if defined(PVX_WATCHDOG_TEST)
+    if(!NSThread.isMainThread)PVXTestBackgroundScans++;
+#endif
     if (!PVXRoot()) return @[];
     NSMutableDictionary *rows = [NSMutableDictionary dictionary];
     for (NSString *sub in @[@"tasks", @"image-tasks", @"inbox", @"image-inbox"]) {
@@ -188,8 +197,10 @@ NSArray<NSDictionary *> *PVXReadVideoTasks(void) {
         for (NSString *field in @[@"title", @"tags", @"folder"]) {
             if ([m[field] isKindOfClass:NSString.class]) row[field] = PVXSafeText(m[field], 180);
         }
-        BOOL local = PVXTaskHasLocalFile(row);
+        NSString *localPath=PVXTaskLocalPath(row);BOOL local=localPath!=nil;
+        objc_setAssociatedObject(row,&PVXResolvedFileKey,localPath?:NSNull.null,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         row[@"hasLocalFile"] = @(local);
+        if(localPath){struct stat st;if(!lstat(localPath.fileSystemRepresentation,&st))row[@"localBytes"]=@(MAX(0,st.st_size));}
         if (!local) row[@"exportUnavailableReason"] = PVXComplete(row) ? @"本地原文件已不存在，请重新下载" : @"下载完成后才能导出";
         [result addObject:row];
     }
@@ -198,6 +209,40 @@ NSArray<NSDictionary *> *PVXReadVideoTasks(void) {
         return r == NSOrderedSame ? [a[@"id"] compare:b[@"id"]] : r;
     }];
     return result;
+}
+// All UI refreshes share one non-main scanner. Concurrent requests coalesce.
+static dispatch_queue_t PVXSnapshotQueue;
+static NSLock *PVXSnapshotLock;
+static NSMutableArray *PVXSnapshotCallbacks;
+static NSArray *PVXSnapshotRows;
+static NSDictionary *PVXSnapshotStorage;
+static BOOL PVXSnapshotRunning;
+static void PVXSnapshotSetup(void){static dispatch_once_t once;dispatch_once(&once,^{PVXSnapshotQueue=dispatch_queue_create("com.crctdd.pyvideo.plus.task-snapshot",DISPATCH_QUEUE_SERIAL);PVXSnapshotLock=[NSLock new];PVXSnapshotRows=@[];PVXSnapshotStorage=@{};PVXSnapshotCallbacks=[NSMutableArray array];});}
+NSDictionary *PVXStorageSummary(void);
+void PVXRequestTaskSnapshot(void(^completion)(NSArray<NSDictionary*>*,NSDictionary*)) {
+    PVXSnapshotSetup();[PVXSnapshotLock lock];
+    if(completion)[PVXSnapshotCallbacks addObject:[completion copy]];
+    if(PVXSnapshotRunning){[PVXSnapshotLock unlock];return;}
+    PVXSnapshotRunning=YES;[PVXSnapshotLock unlock];
+    dispatch_async(PVXSnapshotQueue,^{@autoreleasepool{
+        NSArray *rows=PVXScanVideoTasks();static NSTimeInterval lastStorage;
+        NSTimeInterval now=NSDate.date.timeIntervalSince1970;
+        NSDictionary *storage=PVXSnapshotStorage;
+        if(!storage.count||now-lastStorage>=15){storage=PVXStorageSummary();lastStorage=now;}
+        [PVXSnapshotLock lock];PVXSnapshotRows=rows;PVXSnapshotStorage=storage;
+        NSArray *callbacks=[PVXSnapshotCallbacks copy];[PVXSnapshotCallbacks removeAllObjects];PVXSnapshotRunning=NO;[PVXSnapshotLock unlock];
+        dispatch_async(dispatch_get_main_queue(),^{for(void(^block)(NSArray*,NSDictionary*) in callbacks)block(rows,storage);});
+    }});
+}
+NSArray<NSDictionary*> *PVXReadVideoTasks(void) {
+#if defined(PVX_TEST)
+    // Fixture assertions can request a synchronous read. The actual production
+    // UIKit manager always calls the asynchronous coalescing API even in tests.
+    return PVXScanVideoTasks();
+#else
+    if(!NSThread.isMainThread)return PVXScanVideoTasks();
+    PVXSnapshotSetup();[PVXSnapshotLock lock];NSArray *rows=PVXSnapshotRows;[PVXSnapshotLock unlock];PVXRequestTaskSnapshot(nil);return rows;
+#endif
 }
 static NSString *PVXExtension(NSDictionary *task, NSString *path) {
     if (![task[@"kind"] isEqual:@"image"]) return @"mp4";
@@ -431,14 +476,14 @@ NSDictionary *PVXTaskPresentation(NSDictionary *task) {
     BOOL success = complete && local;
     BOOL fail = [@[@"failed", @"serviceUnavailable"] containsObject:state] || (complete && !local);
     long long received = PVXBytes(task[@"received"]), total = PVXBytes(task[@"total"]);
-    if (local) { struct stat st; if (!lstat(PVXTaskLocalPath(task).fileSystemRepresentation, &st)) received = st.st_size; }
+    if (local && [task[@"localBytes"] isKindOfClass:NSNumber.class]) received=PVXBytes(task[@"localBytes"]);
     double progress = total > 0 ? MIN(1., (double)received/total) : 0;
     NSString *size = [NSByteCountFormatter stringFromByteCount:received countStyle:NSByteCountFormatterCountStyleDecimal];
     if (total > 0 && !complete) size = [size stringByAppendingFormat:@" / %@ (%.1f%%)", [NSByteCountFormatter stringFromByteCount:total countStyle:NSByteCountFormatterCountStyleDecimal], progress*100];
     long long segments = PVXBytes(task[@"segmentsDone"]), count = PVXBytes(task[@"segmentsTotal"]);
     if (count > 0 && !complete) { progress = MIN(1., (double)segments/count); size = [size stringByAppendingFormat:@" · %lld/%lld 片", segments, count]; }
     if ([state isEqual:@"converting"] && [task[@"conversionProgress"] isKindOfClass:NSNumber.class]) progress = MIN(1., MAX(0., [task[@"conversionProgress"] doubleValue]));
-    NSString *format = [task[@"kind"] isEqual:@"image"] ? (local ? PVXExtension(task, PVXTaskLocalPath(task)) : @"图片") : @"mp4";
+    NSString *format = [task[@"kind"] isEqual:@"image"] ? (PVXSafeText(task[@"extension"],16).length?task[@"extension"]:@"图片") : @"mp4";
     return @{@"status":status, @"symbol":success ? @"checkmark.circle.fill" : fail ? @"exclamationmark.circle.fill" : @"arrow.down.circle.fill", @"tint":success ? UIColor.systemGreenColor : fail ? UIColor.systemRedColor : UIColor.systemBlueColor, @"size":size, @"format":format ?: @"图片", @"progress":@(success ? 1 : progress), @"exportEnabled":@(local), @"exportUnavailableReason":local ? @"" : complete ? @"本地原文件已不存在，请重新下载" : @"下载完成后才能导出"};
 }
 @interface PVXThumbnail : NSObject

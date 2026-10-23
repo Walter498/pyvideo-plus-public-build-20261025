@@ -106,7 +106,7 @@ def main():
          '-Wno-unused-parameter', '-Wno-deprecated-declarations', '-I', P / 'src',
          P / 'tests/webkit-beta3-ui.m', P / 'src/Images.m', P / 'src/MediaPreview.m', P / 'src/MediaQuality.m', wrapper, '-o', app / 'WebKitBeta3',
          '-framework', 'Foundation', '-framework', 'UIKit', '-framework', 'WebKit',
-         '-framework', 'ImageIO', '-framework', 'UniformTypeIdentifiers', '-framework', 'AVFoundation', '-framework', 'CoreMedia', '-framework', 'CoreGraphics', '-framework', 'AVKit', '-framework', 'AVFAudio', '-framework', 'QuartzCore'])
+         '-framework', 'ImageIO', '-framework', 'UniformTypeIdentifiers', '-framework', 'AVFoundation', '-framework', 'CoreMedia', '-framework', 'CoreGraphics', '-framework', 'AVKit', '-framework', 'AVFAudio', '-framework', 'QuartzCore', '-framework', 'CoreVideo'])
     run(['codesign', '--force', '--sign', '-', app])
     devices = json.loads(run(['xcrun', 'simctl', 'list', 'devices', 'available', '--json']))['devices']
     phones = [dict(d, runtime=runtime) for runtime, group in devices.items() for d in group
@@ -136,7 +136,7 @@ def main():
         result = docs / 'webkit-beta3-result.txt'
         captured = set()
         while time.monotonic() < deadline:
-            for name in ('collection', 'menu', 'activity'):
+            for name in ('collection', 'menu', 'activity', 'native-player'):
                 if name not in captured and (docs / (name + '.capture')).exists():
                     # Actual simulator framebuffer (UIKit + real WK/system share sheet).
                     run(['xcrun', 'simctl', 'io', udid, 'screenshot', out / (name + '.png')])
@@ -151,7 +151,7 @@ def main():
         (out / 'result.txt').write_text(text)
         if not text.startswith('PASS '):
             raise RuntimeError(text)
-        if captured != {'collection', 'menu', 'activity'}:
+        if captured != {'collection', 'menu', 'activity', 'native-player'}:
             raise RuntimeError('Missing real simulator screenshot')
         artifact = json.loads((docs / 'webkit-beta3-artifacts.json').read_text())
         source, staged = Path(artifact['source']), Path(artifact['staged'])

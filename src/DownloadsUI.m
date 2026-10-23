@@ -58,7 +58,27 @@ static NSString *PVXRowID(NSDictionary *r){NSString *key=PVXText(r[@"id"]);if(!k
 - (void)refresh{PVXRefreshCollection();[self readData];[self.table.refreshControl endRefreshing];}
 - (void)collectionChanged:(NSNotification*)note{if(self.mainTabs.selectedSegmentIndex==1&&!self.presentedViewController)[self readData];}
 - (void)collapse{self.collapsed=!self.collapsed;[self applyFilter:YES];}
-- (void)readData{if(self.reading||self.rangeDisplay)return;if(self.mainTabs.selectedSegmentIndex==1){NSMutableArray *list=[PVXCollectedMedia(self.kind) mutableCopy]?:[NSMutableArray array];NSArray *tasks=PVXReadVideoTasks();for(NSUInteger i=0;i<list.count;i++){NSDictionary *r=list[i];NSDictionary *download=PVXLinkedTask(r,tasks);if(download){NSMutableDictionary *merged=[r mutableCopy];merged[@"linkedTask"]=download;r=merged;list[i]=merged;}NSString *key=PVXRowID(r);if([self.pending containsObject:key]){NSMutableDictionary *m=[r mutableCopy];m[@"submissionState"]=@"正在提交请求…";list[i]=m;}else if(self.submissions[key]){NSMutableDictionary *m=[r mutableCopy];m[@"submissionState"]=@"已提交 · 下载页可查看状态";list[i]=m;}}self.allRows=list;[self applyFilter:NO];return;}self.reading=YES;dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{NSArray *rows=PVXReadVideoTasks();NSDictionary *space=PVXStorageSummary();dispatch_async(dispatch_get_main_queue(),^{self.reading=NO;if(self.mainTabs.selectedSegmentIndex!=0)return;self.allRows=rows;self.spaceLabel.text=PVXText(space[@"text"]);[self applyFilter:NO];});});}
+- (void)readData{
+    if(self.reading||self.rangeDisplay)return;
+    self.reading=YES;NSInteger mode=self.mainTabs.selectedSegmentIndex;NSString *kind=[self.kind copy];
+    // WK access is main-thread only; take just the in-memory DOM snapshot here.
+    NSArray *media=mode==1?[PVXCollectedMedia(kind) copy]:nil;
+    __weak typeof(self)weak=self;
+    PVXRequestTaskSnapshot(^(NSArray *tasks,NSDictionary *space){
+        PVXManager *manager=weak;if(!manager)return;manager.reading=NO;
+        if(mode!=manager.mainTabs.selectedSegmentIndex||![kind isEqual:manager.kind]||manager.rangeDisplay){[manager readData];return;}
+        if(mode==0){manager.allRows=tasks;manager.spaceLabel.text=PVXText(space[@"text"]);[manager applyFilter:NO];return;}
+        // Link-file reads also stay off the main thread (hundreds of candidates).
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
+            NSMutableArray *list=[NSMutableArray array];
+            for(NSDictionary *row in media){NSMutableDictionary *r=[row mutableCopy];NSDictionary *task=PVXLinkedTask(row,tasks);if(task)r[@"linkedTask"]=task;[list addObject:r];}
+            dispatch_async(dispatch_get_main_queue(),^{PVXManager *self=weak;if(!self)return;if(mode!=self.mainTabs.selectedSegmentIndex||![kind isEqual:self.kind]||self.rangeDisplay)return;
+                for(NSUInteger i=0;i<list.count;i++){NSMutableDictionary *r=list[i];NSString *key=PVXRowID(r);if([self.pending containsObject:key])r[@"submissionState"]=@"正在提交请求…";else if(self.submissions[key])r[@"submissionState"]=@"已提交 · 下载页可查看状态";}
+                self.allRows=list;self.spaceLabel.text=PVXText(space[@"text"]);[self applyFilter:NO];
+            });
+        });
+    });
+}
 - (void)applyFilter:(BOOL)force{NSString *query=self.search.text?:@"",*kind=self.kind;NSArray *next=[self.allRows filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(NSDictionary *r,NSDictionary *bindings){if(![r isKindOfClass:NSDictionary.class])return NO;if(![kind isEqual:@"all"]&&![r[@"kind"] isEqual:kind])return NO;if(!query.length)return YES;for(NSString *field in @[@"title",@"url",@"folder",@"tags"]){id value=r[field];NSString *text=[value isKindOfClass:NSArray.class]?[value componentsJoinedByString:@" "]:PVXText(value);if([text localizedCaseInsensitiveContainsString:query])return YES;}return NO;}]];NSMutableArray *oldIDs=[NSMutableArray array],*newIDs=[NSMutableArray array];for(NSDictionary *r in self.rows)[oldIDs addObject:PVXRowID(r)];for(NSDictionary *r in next)[newIDs addObject:PVXRowID(r)];BOOL structural=force||![oldIDs isEqual:newIDs];self.rows=next;[self.selection intersectSet:[NSSet setWithArray:newIDs]];self.sectionLabel.text=[NSString stringWithFormat:@"%@ %@ (%lu)%@",self.collapsed?@"▸":@"▾",self.mainTabs.selectedSegmentIndex?@"当前页面":@"我的下载",(unsigned long)next.count,self.selecting?[NSString stringWithFormat:@" · 已选 %lu",(unsigned long)self.selection.count]:@""];self.batchExport.enabled=self.selection.count>0;self.batchDelete.enabled=self.selection.count>0;self.batchMore.enabled=self.selection.count>0;if(structural)[self.table reloadData];else for(NSIndexPath *path in self.table.indexPathsForVisibleRows){if(path.row<0||(NSUInteger)path.row>=self.rows.count)continue;PVXMediaRow *cell=[self.table cellForRowAtIndexPath:path];[cell render:self.rows[path.row] collect:self.mainTabs.selectedSegmentIndex==1 selecting:self.selecting selected:[self.selection containsObject:PVXRowID(self.rows[path.row])]];}if(!next.count){UILabel *label=[UILabel new];label.numberOfLines=0;label.textAlignment=NSTextAlignmentCenter;label.textColor=UIColor.secondaryLabelColor;label.text=self.mainTabs.selectedSegmentIndex?@"本页尚无可下载媒体\n请播放影片或等待图片加载，再下拉采集。":@"暂无任务，采集后下载会在这里显示。";self.table.backgroundView=label;}else self.table.backgroundView=nil;}
 - (void)searchBar:(UISearchBar*)search textDidChange:(NSString*)text{[self applyFilter:YES];}
 - (void)searchBarSearchButtonClicked:(UISearchBar*)search{[search resignFirstResponder];}
