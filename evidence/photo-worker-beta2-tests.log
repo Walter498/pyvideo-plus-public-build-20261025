@@ -1,0 +1,15 @@
+test_01_sdk16_and_26_arc_compile (__main__.WorkerContract.test_01_sdk16_and_26_arc_compile) ... ok
+test_02_real_binary_plist_fixtures (__main__.WorkerContract.test_02_real_binary_plist_fixtures) ... ok
+test_03_cookie_domain_path_secure_expiry_model (__main__.WorkerContract.test_03_cookie_domain_path_secure_expiry_model) ... ok
+test_04_crash_recovery_model (__main__.WorkerContract.test_04_crash_recovery_model) ... ok
+test_05_transaction_order_and_original_bytes (__main__.WorkerContract.test_05_transaction_order_and_original_bytes) ... ok
+test_06_persistence_and_privacy_guards (__main__.WorkerContract.test_06_persistence_and_privacy_guards) ... ok
+test_07_preference_binary_bool_contract (__main__.WorkerContract.test_07_preference_binary_bool_contract) ... ok
+test_08_manual_is_per_job_and_crash_safe (__main__.WorkerContract.test_08_manual_is_per_job_and_crash_safe) ... ok
+test_09_ready_queue_does_not_starve_downloads (__main__.WorkerContract.test_09_ready_queue_does_not_starve_downloads) ... ok
+test_10_export_metadata_survives_plist_roundtrip (__main__.WorkerContract.test_10_export_metadata_survives_plist_roundtrip) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 36.671s
+
+OK

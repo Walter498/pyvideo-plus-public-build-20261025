@@ -9,13 +9,14 @@ def run(args):
  return r.stdout.strip()
 sdk=run(['xcrun','--sdk','iphoneos','--show-sdk-path'])
 flags=['xcrun','--sdk','iphoneos','clang','-arch','arm64e','-miphoneos-version-min=15.0','-isysroot',sdk,'-F'+sdk+'/System/Library/SubFrameworks','-fobjc-arc','-fblocks','-Os','-Wall','-Wextra','-Werror','-Wno-unused-parameter','-Wno-deprecated-declarations','-I',P/'src']
-frameworks=['Foundation','UIKit','WebKit','AVFoundation','AVKit','ImageIO','CoreGraphics']
+frameworks=['Foundation','UIKit','WebKit','AVFoundation','AVKit','ImageIO','CoreGraphics','UniformTypeIdentifiers']
 fw=[]
 for f in frameworks:fw+=['-framework',f]
-run(flags+['-dynamiclib','-Wl,-install_name,@loader_path/PyVideoPlus.dylib','-o',B/'PyVideoPlus.dylib']+[P/'src'/(n+'.m') for n in ['Main','Images','Menus','Player']]+fw)
+run(flags+['-dynamiclib','-Wl,-install_name,@loader_path/PyVideoPlus.dylib','-o',B/'PyVideoPlus.dylib']+[P/'src'/(n+'.m') for n in ['Main','Images','Menus','Player','Downloads','TaskSupport','PiPInline']]+fw)
 run(flags+['-o',B/'PyVideoPhotoWorker',P/'worker/main.m']+fw+['-framework','Photos','-framework','UniformTypeIdentifiers'])
+run(flags+['-dynamiclib','-Wl,-install_name,@executable_path/PyVideoStorage.dylib','-o',B/'PyVideoStorage.dylib',P/'storage/Storage.m','-framework','Foundation'])
 info={}
-for name in ['PyVideoPlus.dylib','PyVideoPhotoWorker']:
+for name in ['PyVideoPlus.dylib','PyVideoPhotoWorker','PyVideoStorage.dylib']:
  p=B/name;data=p.read_bytes();magic,cpu,sub,typ=struct.unpack_from('<IIII',data)
  assert magic==0xfeedfacf and cpu==0x100000c and sub&0xffffff==2,(name,hex(sub))
  run(['codesign','--force','--sign','-','--entitlements',P/'worker/entitlements.plist',p] if name=='PyVideoPhotoWorker' else ['codesign','--force','--sign','-',p])

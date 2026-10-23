@@ -14,12 +14,18 @@ jobs:
         run: node tests/collector.cjs
       - name: Build true arm64e using Apple compiler and linker
         run: python3 build-macos.py
+      - name: Test storage hooks and disk retention
+        run: sh tests/storage-beta2/check.sh
+      - name: Render same-source UIKit preview in iOS Simulator
+        run: python3 preview-macos.py
       - uses: actions/upload-artifact@v4
         with:
           name: pyvideo-plus-arm64e
           path: |
             build/PyVideoPlus.dylib
             build/PyVideoPhotoWorker
+            build/PyVideoStorage.dylib
             build/cloud-build.json
+            build/downloads-preview.png
             evidence/collector-tests.json
           if-no-files-found: error

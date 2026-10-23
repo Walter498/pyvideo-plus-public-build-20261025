@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
-import os,tarfile,plistlib,json,hashlib,subprocess,struct,shutil
+import os,tarfile,plistlib,json,hashlib,subprocess,struct,shutil,io,re
 P=Path(__file__).resolve().parent
 ORIG=Path('/var/minis/workspace/pyvideo-0.0.3-analysis')
 STAGE=P/'package';DIST=P/'dist';DIST.mkdir(exist_ok=True)
@@ -59,6 +59,39 @@ for original in (ORIG/'rootfs').rglob('*'):
   unchanged.append(str(rel))
 for script in ['postinst','prerm','postrm']:subprocess.run(['sh','-n',str(STAGE/'DEBIAN'/script)],check=True)
 out=DIST/'PyVideo-0.0.3-pvx1-beta1-iphoneos-arm64e.deb'
-subprocess.run(['dpkg-deb','--root-owner-group','-Zxz','-b',str(STAGE),str(out)],check=True)
+# The iOS shared filesystem ignores chmod; archive modes must be explicit.
+modes={}
+for archive,prefix in [('data',''),('control','DEBIAN/')]:
+ with tarfile.open(ORIG/'archive'/(archive+'.tar.xz')) as tf:
+  for m in tf.getmembers():
+   rel=m.name.removeprefix('./').rstrip('/')
+   if rel:modes[prefix+rel]=m.mode
+for rel in ['Library/MobileSubstrate/DynamicLibraries/PyVideoPlus.dylib','Applications/PyVideoAgent.app/PyVideoPhotoWorker','DEBIAN/postinst','DEBIAN/prerm','DEBIAN/postrm']:modes[rel]=0o755
+allfiles=[Path(x) for x in subprocess.check_output(['rg','--files','-uuu',str(STAGE)],text=True).splitlines()]
+size=sum(p.stat().st_size for p in allfiles if 'DEBIAN' not in p.relative_to(STAGE).parts)
+control.write_text(re.sub(r'Installed-Size: .*',f'Installed-Size: {(size+1023)//1024}',control.read_text()))
+def archive_bytes(iscontrol):
+ files=[p for p in allfiles if (p.is_relative_to(STAGE/'DEBIAN'))==iscontrol]
+ root=STAGE/'DEBIAN' if iscontrol else STAGE
+ dirs=set()
+ for p in files:
+  rel=p.relative_to(root)
+  dirs.update(str(x) for x in rel.parents if str(x)!='.')
+ for rel in modes:
+  if rel.startswith('DEBIAN/')!=iscontrol:continue
+  relative=rel[7:] if iscontrol else rel
+  if (root/relative).is_dir():dirs.add(relative)
+ buf=io.BytesIO()
+ with tarfile.open(fileobj=buf,mode='w:xz',preset=3,format=tarfile.GNU_FORMAT) as tf:
+  for d in ['.']+sorted(dirs):
+   t=tarfile.TarInfo('./' if d=='.' else './'+d+'/');t.type=tarfile.DIRTYPE;t.mode=0o755;t.uid=t.gid=0;t.uname=t.gname='root';t.mtime=0;tf.addfile(t)
+  for p in sorted(files):
+   rel=p.relative_to(root);t=tarfile.TarInfo('./'+str(rel));t.mode=modes.get(str(p.relative_to(STAGE)),0o644);t.uid=t.gid=0;t.uname=t.gname='root';t.mtime=0;data=p.read_bytes();t.size=len(data);tf.addfile(t,io.BytesIO(data))
+ return buf.getvalue()
+with out.open('wb') as ar:
+ ar.write(b'!<arch>\n')
+ for name,data in [('debian-binary',b'2.0\n'),('control.tar.xz',archive_bytes(True)),('data.tar.xz',archive_bytes(False))]:
+  header=f'{name+"/":<16}{0:<12}{0:<6}{0:<6}{"100644":<8}{len(data):<10}`\n';assert len(header)==60;ar.write(header.encode());ar.write(data)
+  if len(data)%2:ar.write(b'\n')
 info={'name':out.name,'size':out.stat().st_size,'sha256':hashlib.sha256(out.read_bytes()).hexdigest(),'originalPayloadFilesUnchanged':unchanged,'build':cloud,'testedOnDevice':False,'sourceCommit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=P,text=True).strip()}
 (DIST/'manifest.json').write_text(json.dumps(info,ensure_ascii=False,indent=2)+'\n');print(json.dumps(info,ensure_ascii=False,indent=2))
