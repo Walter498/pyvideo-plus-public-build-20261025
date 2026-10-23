@@ -21,6 +21,7 @@ jobs:
       - name: Run real WebKit collection and production UIKit flows
         run: python3 tests/webkit-beta3-simulator.py
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: pyvideo-plus-arm64e
           path: |
@@ -32,5 +33,7 @@ jobs:
             tests/webkit-beta3-output/**/artifacts.json
             tests/webkit-beta3-output/**/*.png
             tests/webkit-beta3-output/**/source-sha256.json
+            tests/webkit-beta3-output/**/*.log
+            tests/webkit-beta3-output/**/webkit-beta3-result.txt
             evidence/collector-tests.json
           if-no-files-found: error

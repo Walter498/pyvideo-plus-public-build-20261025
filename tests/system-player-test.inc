@@ -32,8 +32,9 @@
             NSDictionary *task=@{@"id":uuid,@"kind":@"video",@"state":@"ready",@"title":@"System AVKit fixture",@"created":@(NSDate.date.timeIntervalSince1970)};
             Check(PVXAtomic(task,PVXPath([NSString stringWithFormat:@"tasks/%@.plist",uuid]),NULL),@"real playable task snapshot written");
             PVXPreviewMedia(task);
-            Wait(150,^BOOL{return self.manager.presentedViewController&&object_getClass(self.manager.presentedViewController)==AVPlayerViewController.class;},^{
+            Wait(150,^BOOL{return [self.manager.presentedViewController isKindOfClass:AVPlayerViewController.class];},^{
                 AVPlayerViewController *player=(id)self.manager.presentedViewController;
+                Check(player.class==AVPlayerViewController.class,[NSString stringWithFormat:@"native Apple player public class %@ runtime %@",NSStringFromClass(player.class),NSStringFromClass(object_getClass(player))]);
                 Check(player.showsPlaybackControls&&player.allowsPictureInPicturePlayback&&!player.requiresLinearPlayback,@"exact Apple AVPlayerViewController enables standard controls seeking and PiP");
                 Check(player.modalPresentationStyle==UIModalPresentationFullScreen,@"system video presented directly fullscreen without custom wrapper");
                 Check(player.contentOverlayView.subviews.count==0,@"no custom buttons layered over system player");

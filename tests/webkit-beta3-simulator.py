@@ -170,6 +170,15 @@ def main():
         (out / 'artifacts.json').write_text(json.dumps(artifact, indent=2, ensure_ascii=False))
         print(text)
         print('Artifacts:', out)
+    except Exception:
+        for evidence in docs.glob('webkit-beta3-*'):
+            if evidence.is_file():
+                shutil.copy2(evidence, out / evidence.name)
+        diagnostic = subprocess.run(['xcrun', 'simctl', 'spawn', udid, 'log', 'show', '--last', '3m', '--style', 'compact', '--predicate', 'process == "WebKitBeta3"'], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30)
+        (out / 'failure-console.log').write_text(diagnostic.stdout)
+        print(diagnostic.stdout[-18000:], flush=True)
+        subprocess.run(['xcrun', 'simctl', 'io', udid, 'screenshot', str(out / 'failure.png')], timeout=20)
+        raise
     finally:
         server.shutdown()
         # Simulator test bundle only; leave framebuffer/evidence intact on disk.
