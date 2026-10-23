@@ -8,7 +8,7 @@ const MAX_IMAGES=300,MAX_NODES=2000,roots=new Set(),listeners=new WeakSet();
 const http=v=>{if(typeof v!=='string'||!v.trim()||v.length>16384)return '';try{const u=new URL(v,document.baseURI);return /^https?:$/.test(u.protocol)?u.href:'';}catch{return '';}};
 const dimensions=el=>({width:Number(el.naturalWidth||el.videoWidth||el.width||0),height:Number(el.naturalHeight||el.videoHeight||el.height||0)});
 function activate(v){if(!v||v.tagName!=='VIDEO')return;chosen=v;chosenAt=Date.now();schedule();}
-function tagVideo(v){if(listeners.has(v))return;listeners.add(v);for(const n of ['webkitbeginfullscreen','enterpictureinpicture','pointerdown','touchstart','play'])v.addEventListener(n,()=>activate(v),{passive:true});}
+function tagVideo(v){if(listeners.has(v))return;listeners.add(v);for(const n of ['webkitbeginfullscreen','enterpictureinpicture','pointerdown','touchstart','play'])v.addEventListener(n,()=>activate(v),{passive:true});for(const n of ['webkitendfullscreen','leavepictureinpicture','pause','emptied'])v.addEventListener(n,schedule,{passive:true});}
 function scan(force=false){
  if(timer!==null){clearTimeout(timer);timer=null;}if(!running)return;
  if(lastURL!==location.href){lastURL=location.href;chosen=null;chosenAt=0;}
@@ -32,7 +32,7 @@ function scan(force=false){
  let active=null;const v=chosen;
  if(v&&v.isConnected!==false&&(Date.now()-chosenAt<30000||v.webkitDisplayingFullscreen||v.webkitPresentationMode==='picture-in-picture'||document.pictureInPictureElement===v)){
   const source=http(v.currentSrc)||http(v.getAttribute('src'))||[...v.querySelectorAll('source')].map(s=>http(s.src||s.getAttribute('src'))).find(Boolean)||'';
-  active={url:source,blob:!source&&String(v.currentSrc||v.src||'').startsWith('blob:'),title:String(v.title||document.title||'当前播放视频').slice(0,180),at:Date.now(),fullscreen:!!v.webkitDisplayingFullscreen,pip:v.webkitPresentationMode==='picture-in-picture'||document.pictureInPictureElement===v};
+  active={url:source,blob:!source&&String(v.currentSrc||v.src||'').startsWith('blob:'),title:String(v.title||document.title||'当前播放视频').slice(0,180),at:chosenAt,fullscreen:!!v.webkitDisplayingFullscreen,pip:v.webkitPresentationMode==='picture-in-picture'||document.pictureInPictureElement===v};
  }
  const message={version:1,documentID:docID,page:location.href.slice(0,16384),images:[...found.values()],active};
  const sig=JSON.stringify(message);if(!force&&sig===last)return;

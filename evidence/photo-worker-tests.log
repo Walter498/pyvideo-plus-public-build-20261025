@@ -6,6 +6,6 @@ test_05_transaction_order_and_original_bytes (__main__.WorkerContract.test_05_tr
 test_06_persistence_and_privacy_guards (__main__.WorkerContract.test_06_persistence_and_privacy_guards) ... ok
 
 ----------------------------------------------------------------------
-Ran 6 tests in 15.066s
+Ran 6 tests in 15.177s
 
 OK
