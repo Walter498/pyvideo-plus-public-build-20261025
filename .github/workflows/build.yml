@@ -1,0 +1,25 @@
+name: Build PyVideo Plus arm64e
+on:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test original and enhanced collectors
+        run: node tests/collector.cjs
+      - name: Build true arm64e using Apple compiler and linker
+        run: python3 build-macos.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pyvideo-plus-arm64e
+          path: |
+            build/PyVideoPlus.dylib
+            build/PyVideoPhotoWorker
+            build/cloud-build.json
+            evidence/collector-tests.json
+          if-no-files-found: error
