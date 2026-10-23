@@ -5,7 +5,11 @@ OUT=$(mktemp -d /tmp/pvx-storage-check.XXXXXX)
 trap 'rm -rf "$OUT"' EXIT HUP INT TERM
 clang -x c -Wall -Wextra -Werror "$ROOT/tests/storage-beta2/io.c" -o "$OUT/io"
 "$OUT/io"
-SDK=/root/theos/sdks/iPhoneOS16.5.sdk
+if [ "$(uname -s)" = Darwin ]; then
+ SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+else
+ SDK=/root/theos/sdks/iPhoneOS16.5.sdk
+fi
 clang -target arm64-apple-ios15.0 -fobjc-arc -fblocks -fsyntax-only -isysroot "$SDK" -Wall -Wextra -Werror "$ROOT/storage/Storage.m"
 clang -target arm64-apple-ios15.0 -fobjc-arc -fblocks -c -isysroot "$SDK" -Wall -Wextra -Werror "$ROOT/storage/Storage.m" -o "$OUT/Storage.o"
 clang -target arm64-apple-ios15.0 -fobjc-arc -fblocks -fsyntax-only -isysroot "$SDK" -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-variable "$ROOT/tests/storage-beta2/mock.m"
