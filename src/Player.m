@@ -149,7 +149,11 @@ static id PVXPlayerAppendDownload(id original, id owner) {
     else return original;
     for (id item in children) if (![item isKindOfClass:UIMenuElement.class]) return original;
     if (PVXPlayerContainsAction(children, 0)) return original;
-    NSArray *updated = [children arrayByAddingObject:PVXPlayerDownloadAction(owner)];
+    UIAction *manager = [UIAction actionWithTitle:@"下载管理" image:[UIImage systemImageNamed:@"list.bullet.rectangle"] identifier:@"com.crctdd.pyvideo.plus.player-manager" handler:^(__kindof UIAction *action) {
+        (void)action;
+        dispatch_async(dispatch_get_main_queue(), ^{ PVXOpenDownloads(); });
+    }];
+    NSArray *updated = [children arrayByAddingObjectsFromArray:@[PVXPlayerDownloadAction(owner), manager]];
     if ([original isKindOfClass:UIMenu.class])
         return [(UIMenu *)original menuByReplacingChildren:updated];
     return updated;

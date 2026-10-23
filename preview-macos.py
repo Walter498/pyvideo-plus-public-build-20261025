@@ -8,7 +8,7 @@ def run(args,check=True):
  if check and r.returncode:raise RuntimeError(' '.join(map(str,args)))
  return r.stdout.strip()
 sdk=run(['xcrun','--sdk','iphonesimulator','--show-sdk-path']);arch=run(['uname','-m'])
-run(['xcrun','--sdk','iphonesimulator','clang','-arch',arch,'-mios-simulator-version-min=15.0','-isysroot',sdk,'-F'+sdk+'/System/Library/SubFrameworks','-fobjc-arc','-fblocks','-Wno-deprecated-declarations','-I',P/'src',P/'src/Downloads.m',P/'preview/Preview.m','-framework','UIKit','-framework','Foundation','-framework','WebKit','-o',app/'Preview'])
+run(['xcrun','--sdk','iphonesimulator','clang','-arch',arch,'-mios-simulator-version-min=15.0','-isysroot',sdk,'-F'+sdk+'/System/Library/SubFrameworks','-fobjc-arc','-fblocks','-Wno-deprecated-declarations','-I',P/'src',P/'src/Downloads.m',P/'preview/Preview.m','-framework','UIKit','-framework','Foundation','-framework','WebKit','-framework','CoreGraphics','-o',app/'Preview'])
 (app/'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':'com.crctdd.pyvideo.preview','CFBundleExecutable':'Preview','CFBundleName':'Preview','CFBundleVersion':'1','CFBundleShortVersionString':'1','CFBundlePackageType':'APPL','UILaunchScreen':{},'LSRequiresIPhoneOS':True,'UIDeviceFamily':[1],'UISupportedInterfaceOrientations':['UIInterfaceOrientationPortrait']}))
 devices=json.loads(run(['xcrun','simctl','list','devices','available','--json']))['devices'];phone=next((d for group in devices.values() for d in group if d['name'].startswith('iPhone') and d.get('isAvailable')),None)
 assert phone
