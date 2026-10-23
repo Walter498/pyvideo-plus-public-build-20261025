@@ -55,7 +55,7 @@ static NSDictionary *PVXRead(int dir, NSString *name) {
     int fd = openat(dir, name.fileSystemRepresentation, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
     if (fd < 0) return nil;
     struct stat st;
-    if (fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_uid != geteuid() || st.st_nlink != 1 || st.st_size < 8 || st.st_size > PVXMaxPlist || fchmod(fd,0600)) { close(fd); return nil; }
+    if (fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_uid != geteuid() || st.st_nlink != 1 || st.st_size < 8 || (uint64_t)st.st_size > PVXMaxPlist || fchmod(fd,0600)) { close(fd); return nil; }
     NSMutableData *b = [NSMutableData dataWithLength:(NSUInteger)st.st_size];
     NSUInteger pos = 0;
     while (pos < b.length) {

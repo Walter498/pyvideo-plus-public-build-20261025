@@ -8,7 +8,7 @@ def run(args):
  if r.returncode:raise RuntimeError('command failed: '+' '.join(map(str,args)))
  return r.stdout.strip()
 sdk=run(['xcrun','--sdk','iphoneos','--show-sdk-path'])
-flags=['xcrun','--sdk','iphoneos','clang','-arch','arm64e','-miphoneos-version-min=15.0','-isysroot',sdk,'-F'+sdk+'/System/Library/SubFrameworks','-fobjc-arc','-fblocks','-Os','-Wall','-Wextra','-Wno-unused-parameter','-Wno-deprecated-declarations','-I',P/'src']
+flags=['xcrun','--sdk','iphoneos','clang','-arch','arm64e','-miphoneos-version-min=15.0','-isysroot',sdk,'-F'+sdk+'/System/Library/SubFrameworks','-fobjc-arc','-fblocks','-Os','-Wall','-Wextra','-Werror','-Wno-unused-parameter','-Wno-deprecated-declarations','-I',P/'src']
 frameworks=['Foundation','UIKit','WebKit','AVFoundation','AVKit','ImageIO','CoreGraphics']
 fw=[]
 for f in frameworks:fw+=['-framework',f]

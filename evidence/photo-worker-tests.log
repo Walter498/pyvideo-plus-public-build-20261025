@@ -1,0 +1,11 @@
+test_01_sdk26_syntax (__main__.WorkerContract.test_01_sdk26_syntax) ... ok
+test_02_real_binary_plist_fixtures (__main__.WorkerContract.test_02_real_binary_plist_fixtures) ... ok
+test_03_cookie_domain_path_secure_expiry_model (__main__.WorkerContract.test_03_cookie_domain_path_secure_expiry_model) ... ok
+test_04_crash_recovery_model (__main__.WorkerContract.test_04_crash_recovery_model) ... ok
+test_05_transaction_order_and_original_bytes (__main__.WorkerContract.test_05_transaction_order_and_original_bytes) ... ok
+test_06_persistence_and_privacy_guards (__main__.WorkerContract.test_06_persistence_and_privacy_guards) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 15.066s
+
+OK
