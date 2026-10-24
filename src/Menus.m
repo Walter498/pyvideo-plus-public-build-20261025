@@ -58,29 +58,20 @@ static BOOL PVXMenuProviderMatches(id object) {
         && PVXMenuObjectType([signature getArgumentTypeAtIndex:1]);
 }
 
-static BOOL PVXMenuContainsDownload(UIMenu *menu) {
-    for (UIMenuElement *child in menu.children) {
-        if ([child isKindOfClass:UIAction.class] &&
-            [((UIAction *)child).identifier isEqualToString:PVXDownloadMenuIdentifier]) return YES;
-        if ([child isKindOfClass:UIMenu.class] && PVXMenuContainsDownload((UIMenu *)child)) return YES;
+static UIMenu *PVXStripDownloadAction(UIMenu *menu) {
+    if (![menu isKindOfClass:UIMenu.class]) return menu;
+    NSMutableArray *children=[NSMutableArray array];BOOL changed=NO;
+    for(UIMenuElement *child in menu.children){
+        if([child isKindOfClass:UIAction.class]&&[((UIAction*)child).identifier isEqualToString:PVXDownloadMenuIdentifier]){changed=YES;continue;}
+        if([child isKindOfClass:UIMenu.class]){UIMenu *nested=PVXStripDownloadAction((UIMenu*)child);changed|=nested!=child;[children addObject:nested];}
+        else [children addObject:child];
     }
-    return NO;
+    return changed?[menu menuByReplacingChildren:children]:menu;
 }
-
 static id PVXMenuAppendDownloads(id original) {
-    // A nil return can deliberately suppress a menu; do not manufacture one.
     if (![original isKindOfClass:UIMenu.class] || !NSThread.isMainThread) return original;
-    UIMenu *menu = original;
-    if (PVXMenuContainsDownload(menu)) return menu;
-    UIAction *action = [UIAction actionWithTitle:@"下载视频与图片"
-                                         image:[UIImage systemImageNamed:@"arrow.down.circle"]
-                                    identifier:PVXDownloadMenuIdentifier
-                                       handler:^(__unused UIAction *sender) {
-        // Queue past the menu's dismissal; never retain a browser/window context.
-        dispatch_async(dispatch_get_main_queue(), ^{ PVXOpenDownloads(); });
-    }];
-    // Unlike rebuilding a UIMenu from its title/options, this preserves metadata,
-    // subtitle, identifiers, attributes, existing disabled actions and providers.
+    UIMenu *menu=PVXStripDownloadAction((UIMenu*)original);
+    UIAction *action=[UIAction actionWithTitle:@"下载视频与图片" image:[UIImage systemImageNamed:@"arrow.down.circle"] identifier:PVXDownloadMenuIdentifier handler:^(__unused UIAction *sender){dispatch_async(dispatch_get_main_queue(),^{PVXOpenDownloads();});}];
     return [menu menuByReplacingChildren:[menu.children arrayByAddingObject:action]];
 }
 
@@ -139,7 +130,7 @@ static UIMenu *PVXRemoveOriginalTabAction(UIMenu *menu) {
     }
     return changed?[menu menuByReplacingChildren:items]:menu;
 }
-static void PVXBarSetMenu(id self,SEL command,id menu) { ((void(*)(id,SEL,id))PVXOldBarSetMenu)(self,command,PVXRemoveOriginalTabAction(menu)); }
+static void PVXBarSetMenu(id self,SEL command,id menu) { UIMenu *clean=PVXRemoveOriginalTabAction(menu); ((void(*)(id,SEL,id))PVXOldBarSetMenu)(self,command,PVXMenuAppendDownloads(clean)); }
 void PVXInstallMenuHooks(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
