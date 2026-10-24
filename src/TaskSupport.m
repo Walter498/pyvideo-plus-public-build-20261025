@@ -346,8 +346,8 @@ void PVXTaskAction(NSDictionary *task, NSString *action) {
         PVXDeleteTasks(@[task], ^(NSString *error) { if (error) PVXAlert(@"删除未完成", error); });
         return;
     }
-    NSError *error = nil;
-    if (!PVXQueueControl(task, action, &error)) PVXAlert(@"任务操作失败", @"下载服务接口不可用或操作不受支持");
+    NSDictionary *copy=[task copy];NSString *requested=[action copy];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{NSError *error=nil;BOOL ok=PVXQueueControl(copy,requested,&error);if(!ok)dispatch_async(dispatch_get_main_queue(),^{PVXAlert(@"任务操作失败", @"下载服务接口不可用或操作不受支持");});});
 }
 void PVXTaskActionAll(NSArray<NSDictionary*> *tasks, NSString *action, void(^completion)(NSUInteger,NSString*)) {
     NSArray *copy=[tasks copy]?:@[];

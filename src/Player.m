@@ -109,16 +109,7 @@ static NSDictionary *PVXPlayerContext(id owner) {
     return @{@"playerController": playbackContext ?: owner};
 }
 
-static BOOL PVXPlayerContainsAction(NSArray *children, NSUInteger depth) {
-    if (depth > 16) return NO;
-    for (id item in children) {
-        if ([item isKindOfClass:UIAction.class] &&
-            [((UIAction *)item).identifier isEqualToString:PVXPlayerActionID]) return YES;
-        if ([item isKindOfClass:UIMenu.class] &&
-            PVXPlayerContainsAction(((UIMenu *)item).children, depth + 1)) return YES;
-    }
-    return NO;
-}
+static NSArray *PVXPlayerStripInjected(NSArray *children){NSMutableArray *out=[NSMutableArray array];for(UIMenuElement *item in children){if([item isKindOfClass:UIAction.class]&&([((UIAction*)item).identifier isEqual:@"com.crctdd.pyvideo.plus.download-current-video"]||[((UIAction*)item).identifier isEqual:@"com.crctdd.pyvideo.plus.player-manager"]))continue;if([item isKindOfClass:UIMenu.class]){UIMenu*m=(UIMenu*)item;[out addObject:[m menuByReplacingChildren:PVXPlayerStripInjected(m.children)]];}else [out addObject:item];}return out;}
 
 static UIAction *PVXPlayerDownloadAction(id owner) {
     __weak id weakOwner = owner; // avoid owner -> controls/menu -> action -> owner retain cycle
@@ -148,7 +139,7 @@ static id PVXPlayerAppendDownload(id original, id owner) {
     else if ([original isKindOfClass:UIMenu.class]) children = ((UIMenu *)original).children;
     else return original;
     for (id item in children) if (![item isKindOfClass:UIMenuElement.class]) return original;
-    if (PVXPlayerContainsAction(children, 0)) return original;
+    children=PVXPlayerStripInjected(children);
     UIAction *manager = [UIAction actionWithTitle:@"下载管理" image:[UIImage systemImageNamed:@"list.bullet.rectangle"] identifier:@"com.crctdd.pyvideo.plus.player-manager" handler:^(__kindof UIAction *action) {
         (void)action;
         dispatch_async(dispatch_get_main_queue(), ^{ PVXOpenDownloads(); });
