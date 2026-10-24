@@ -58,8 +58,8 @@ def main():
                 requests.append({'method': 'GET', 'path': self.path})
             if self.path == '/real.png':
                 data, mime, status = png, 'image/png', 200
-            elif self.path == '/real.mp4':
-                # Intentionally NOT playable; tests detect the DOM video URL, not playback.
+            elif self.path in ('/real.mp4','/network.mp4'):
+                # Detection fixture: network.mp4 is fetched dynamically by page JS.
                 data, mime, status = b'PVX-video-URL-detection-only', 'video/mp4', 200
             else:
                 data, mime, status = b'not found', 'text/plain', 404

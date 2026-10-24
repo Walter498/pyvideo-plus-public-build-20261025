@@ -59,7 +59,7 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
     Web.navigationDelegate=self; [Host.view addSubview:Web];
     NSString *base=NSProcessInfo.processInfo.environment[@"PVX_FIXTURE_URL"];
     Check([base hasPrefix:@"http://127.0.0.1:"],@"real localhost fixture URL supplied");
-    NSString *html=@"<!doctype html><html><head><title>WebKit beta3 fixture</title></head><body><img width='96' height='96' src='real.png' title='real image'><video width='160' height='90' preload='none' src='real.mp4' title='real video'></video><script>fetch('real.mp4').then(r=>r.arrayBuffer());const ms=new MediaSource();const runtime=document.createElement('video');runtime.src=URL.createObjectURL(ms);runtime.title='MSE runtime fixture';document.body.appendChild(runtime);</script></body></html>";
+    NSString *html=@"<!doctype html><html><head><title>WebKit beta3 fixture</title></head><body><img width='96' height='96' src='real.png' title='real image'><video width='160' height='90' preload='none' src='real.mp4' title='real video'></video><script>fetch('network.mp4').then(r=>r.arrayBuffer());const ms=new MediaSource();const runtime=document.createElement('video');runtime.src=URL.createObjectURL(ms);runtime.title='MSE runtime fixture';document.body.appendChild(runtime);</script></body></html>";
     [Web loadHTMLString:html baseURL:[NSURL URLWithString:base]];
     return YES;
 }
@@ -69,12 +69,12 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
     PVXSetCollectionWebView(web);
     // Production refresh configures the native handler AND executes the actual resource.
     PVXRefreshCollection();
-    Wait(250,^BOOL{ return PVXCollectedMedia(@"all").count==2; },^{ [self submit]; },@"real WebKit collector posts image and video");
+    Wait(250,^BOOL{NSArray *vv=PVXCollectedMedia(@"video");BOOL network=NO;for(NSDictionary *row in vv)if([row[@"url"] hasSuffix:@"/network.mp4"])network=YES;return PVXCollectedMedia(@"image").count==1&&vv.count>=2&&network;},^{ [self submit]; },@"real WebKit collector posts DOM and dynamically fetched video sources");
 }
 - (void)submit {
     NSArray *images=PVXCollectedMedia(@"image"),*videos=PVXCollectedMedia(@"video");
-    Check(images.count==1&&videos.count==1,@"real collected types: one image and one video");
-    NSArray *videoRows=PVXCollectedMedia(@"video");NSDictionary *networkVideo=nil;for(NSDictionary *vv in videoRows)if([vv[@"url"] hasSuffix:@"/real.mp4"]){networkVideo=vv;break;}Check(images.count==1&&videos.count>=1&&networkVideo!=nil&&[networkVideo[@"protocol"] isEqual:@"video"],@"network fetch media URL and MIME protocol classification are preserved");
+    Check(images.count==1&&videos.count>=2, @"real collected types: one image and multiple DOM/network videos");
+    NSArray *videoRows=PVXCollectedMedia(@"video");NSDictionary *networkVideo=nil;for(NSDictionary *vv in videoRows)if([vv[@"url"] hasSuffix:@"/network.mp4"]){networkVideo=vv;break;}Check(images.count==1&&videos.count>=2&&networkVideo!=nil&&[networkVideo[@"protocol"] isEqual:@"video"],@"network fetch media URL and MIME protocol classification are preserved");
     Check([images[0][@"documentID"] length]>0,@"native message carries real document identity");
     PVXFetchTaskThumbnail(images[0],^(UIImage *image){self.remoteThumbValid=image!=nil;});
     PVXSubmitMedia(images[0],^(NSDictionary *receipt,NSString *error){
