@@ -7,6 +7,7 @@ extern void PVXAlert(NSString *, NSString *);
 #import <ImageIO/ImageIO.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <AVFoundation/AVFoundation.h>
+#import <Photos/Photos.h>
 #import <notify.h>
 #endif
 #import <dlfcn.h>
@@ -135,8 +136,7 @@ NSString *PVXTaskLocalPath(NSDictionary *task) {
     return nil;
 }
 BOOL PVXTaskHasLocalFile(NSDictionary *task) { id prepared=objc_getAssociatedObject(task,&PVXResolvedFileKey);if(prepared)return [prepared isKindOfClass:NSString.class];if([task[@"hasLocalFile"] isKindOfClass:NSNumber.class])return [task[@"hasLocalFile"] boolValue];return PVXTaskLocalPath(task)!=nil; }
-BOOL PVXAutoSavePhotos(void) { return NO; }
-void PVXSetAutoSavePhotos(BOOL enabled) { (void)enabled; }
+
 #if !defined(PVX_FOUNDATION_TEST)
 static long long PVXBytes(id v) { return [v isKindOfClass:NSNumber.class] ? MAX(0, [v longLongValue]) : 0; }
 #endif
@@ -310,7 +310,8 @@ static BOOL PVXQueueControl(NSDictionary *task, NSString *action, NSError **erro
         return ok;
     }
     typedef BOOL (*Control)(NSString *, NSString *, NSError **);
-    Control fn = (Control)dlsym(RTLD_DEFAULT, "PVEnqueueControl");
+    static Control fn; static dispatch_once_t once;
+    dispatch_once(&once, ^{ fn=(Control)dlsym(RTLD_DEFAULT, "PVEnqueueControl"); });
     return fn ? fn(task[@"id"], action, error) : NO;
 }
 void PVXDeleteTasks(NSArray<NSDictionary *> *tasks, void (^completion)(NSString *)) {
@@ -341,6 +342,14 @@ void PVXTaskAction(NSDictionary *task, NSString *action) {
     }
     NSError *error = nil;
     if (!PVXQueueControl(task, action, &error)) PVXAlert(@"任务操作失败", @"下载服务接口不可用或操作不受支持");
+}
+void PVXTaskActionAll(NSArray<NSDictionary*> *tasks, NSString *action, void(^completion)(NSUInteger,NSString*)) {
+    NSArray *copy=[tasks copy]?:@[];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
+        NSUInteger count=0; NSString *firstError=nil;
+        for(NSDictionary *task in copy){ NSError *error=nil; if(PVXQueueControl(task,action,&error)) count++; else if(!firstError.length) firstError=error.localizedDescription?:@"部分任务操作未入队"; }
+        dispatch_async(dispatch_get_main_queue(),^{if(completion)completion(count,firstError);});
+    });
 }
 NSDictionary *PVXStorageSummary(void) {
     NSString *root = PVXRoot();
@@ -466,8 +475,30 @@ void PVXExportTasks(NSArray<NSDictionary *> *tasks, UIView *anchor) {
         });
     });
 }
-void PVXExportTaskToFiles(NSDictionary *task) { PVXExportTasks(@[task], nil); }
-void PVXSaveTaskToPhotos(NSDictionary *task) { PVXExportTasks(@[task], nil); }
+static NSString *PVXCloudDownloadsPath(void){
+    NSString *home=NSHomeDirectory();
+    NSArray *roots=@[[home stringByAppendingPathComponent:@"Library/Mobile Documents/com~apple~CloudDocs/Downloads"],[home stringByAppendingPathComponent:@"Library/Mobile Documents/com~apple~CloudDocs/下载项目"]];
+    for(NSString *root in roots) if([NSFileManager.defaultManager createDirectoryAtPath:root withIntermediateDirectories:YES attributes:nil error:nil]) return root;
+    return nil;
+}
+void PVXSaveTaskToFiles(NSDictionary *task) {
+    NSString *source=PVXTaskLocalPath(task); if(!source.length){PVXAlert(@"保存失败",@"本地文件尚未准备完成。");return;}
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
+        NSString *dir=PVXCloudDownloadsPath(); NSError *error=nil; NSString *title=PVXSafeText(task[@"title"],80); if(!title.length)title=task[@"id"]?:@"下载文件"; title=[title stringByReplacingOccurrencesOfString:@"/" withString:@"_"]; NSString *ext=task[@"kind"]&&[task[@"kind"] isEqual:@"image"]?source.pathExtension:@"mp4"; NSString *dest=dir?[dir stringByAppendingPathComponent:[title stringByAppendingPathExtension:ext]]:nil; BOOL ok=dest&&[NSFileManager.defaultManager copyItemAtPath:source toPath:dest error:&error]; dispatch_async(dispatch_get_main_queue(),^{if(ok)PVXAlert(@"已保存到文件",@"文件已写入 iCloud 云碟下载项目。 ");else PVXExportTasks(@[task],nil);});
+    });
+}
+void PVXSaveTaskToPhotos(NSDictionary *task) {
+    NSString *path=PVXTaskLocalPath(task); if(!path.length){PVXAlert(@"保存失败",@"本地文件尚未准备完成。");return;}
+    void(^save)(void)=^{[[PHPhotoLibrary sharedPhotoLibrary] performChanges:^{if([task[@"kind"] isEqual:@"image"]){UIImage *image=[UIImage imageWithContentsOfFile:path];if(image)[PHAssetChangeRequest creationRequestForAssetFromImage:image];}else [PHAssetChangeRequest creationRequestForAssetFromVideoAtFileURL:[NSURL fileURLWithPath:path]];} completionHandler:^(BOOL ok,NSError *error){if(!ok)PVXAlert(@"保存到相册失败",error.localizedDescription?:@"系统未完成保存。");}];};
+    if(@available(iOS 14.0,*))[PHPhotoLibrary requestAuthorizationForAccessLevel:PHAccessLevelAddOnly handler:^(PHAuthorizationStatus status){if(status==PHAuthorizationStatusAuthorized||status==PHAuthorizationStatusLimited)dispatch_async(dispatch_get_main_queue(),save);else PVXAlert(@"无法保存到相册",@"没有照片添加权限。");}];else [PHPhotoLibrary requestAuthorization:^(PHAuthorizationStatus status){if(status==PHAuthorizationStatusAuthorized)dispatch_async(dispatch_get_main_queue(),save);}];
+}
+BOOL PVXAutoSavePhotos(void){return [NSUserDefaults.standardUserDefaults boolForKey:@"com.crctdd.pyvideo.plus.autoPhotos"];}
+void PVXSetAutoSavePhotos(BOOL enabled){[NSUserDefaults.standardUserDefaults setBool:enabled forKey:@"com.crctdd.pyvideo.plus.autoPhotos"];}
+void PVXApplyAutoSavePreferences(NSArray<NSDictionary*> *tasks){
+    BOOL photos=[NSUserDefaults.standardUserDefaults boolForKey:@"com.crctdd.pyvideo.plus.autoPhotos"],files=[NSUserDefaults.standardUserDefaults boolForKey:@"com.crctdd.pyvideo.plus.autoFiles"];if(!photos&&!files)return;
+    NSArray *copy=[tasks copy];dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{for(NSDictionary *task in copy){if(!PVXComplete(task)||!PVXTaskLocalPath(task)||!PVXUUID(task[@"id"]))continue;NSMutableDictionary*m=[PVXMetadata(task[@"id"]) mutableCopy];m[@"id"]=task[@"id"];if(photos&&! [m[@"autoPhotos"] boolValue]){m[@"autoPhotos"]=@YES;PVXAtomic(m,PVXMetadataPath(task[@"id"]),NULL);PVXSaveTaskToPhotos(task);}if(files&&! [m[@"autoFiles"] boolValue]){m[@"autoFiles"]=@YES;PVXAtomic(m,PVXMetadataPath(task[@"id"]),NULL);PVXSaveTaskToFiles(task);}}});
+}
+void PVXCreateDownloadFolder(NSString *name,void(^completion)(BOOL,NSString*)){NSString *safe=PVXSafeText(name,80);BOOL valid=safe.length&&[safe rangeOfCharacterFromSet:[NSCharacterSet characterSetWithCharactersInString:@"/\\:"]].location==NSNotFound;dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{NSString *root=PVXRoot();NSError *error=nil;BOOL ok=valid&&root&&[NSFileManager.defaultManager createDirectoryAtPath:[root stringByAppendingPathComponent:[NSString stringWithFormat:@"files/%@",safe]] withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0700} error:&error];dispatch_async(dispatch_get_main_queue(),^{if(completion)completion(ok,error.localizedDescription);});});}
 NSDictionary *PVXTaskPresentation(NSDictionary *task) {
     NSString *state = PVXSafeText(task[@"state"], 40);
     BOOL local = PVXTaskHasLocalFile(task), complete = PVXComplete(task);

@@ -107,8 +107,8 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
 - (void)testManager {
     PVXManager *m=self.manager; [m.view layoutIfNeeded];
     Check(m.mainTabs.numberOfSegments==2&&m.mainTabs.bounds.size.width>0,@"actual mainTabs exists with download/collect segments");
-    Check(!CGRectIntersectsRect(m.mainTabs.frame,m.closeButton.frame)&&!CGRectIntersectsRect(m.mainTabs.frame,m.selectionButton.frame)&&CGRectGetMaxY(m.mainTabs.frame)<=CGRectGetMinY(m.spaceLabel.frame),@"mainTabs frame does not overlap header controls");
-    Check(CGRectGetMaxY(m.mediaTabs.frame)<=CGRectGetMinY(m.sectionLabel.frame)&&CGRectGetMaxY(m.feedback.frame)<=CGRectGetMinY(m.table.frame),@"filter and table layout do not overlap");
+    Check(!CGRectIntersectsRect(m.mainTabs.frame,m.closeButton.frame)&&!CGRectIntersectsRect(m.mainTabs.frame,m.moreButton.frame)&&CGRectGetMaxY(m.mainTabs.frame)<=CGRectGetMinY(m.spaceLabel.frame),@"mainTabs frame does not overlap header controls");
+    Check(CGRectGetMaxY(m.mediaTabs.frame)<=CGRectGetMinY(m.sectionLabel.frame)&&CGRectGetMaxY(m.feedback.frame)<=CGRectGetMinY(m.table.frame),@"filter and table layout do not overlap");Check(m.sortButton.menu.children.count==5,@"download and collect pages expose five-option native sort menu");Check(m.moreButton.menu.children.count==4,@"top-right native 3D menu exposes creation display batch and settings groups");Check([m tableView:m.table trailingSwipeActionsConfigurationForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]].performsFirstActionWithFullSwipe,@"list rows expose full-swipe delete");[m setGridMode:YES];Check(m.grid.hidden==NO&&m.table.hidden==YES,@"native icon mode switches to two-column collection view");[m setGridMode:NO];
     m.mainTabs.selectedSegmentIndex=1; [m.mainTabs sendActionsForControlEvents:UIControlEventValueChanged];
     Wait(100,^BOOL{ return m.rows.count==2; },^{
         Check(m.table.numberOfSections==1&&[m.table numberOfRowsInSection:0]==2,@"collect all shows two actual rows");
@@ -127,8 +127,8 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
 - (void)testSelectionAfterFilters {
         PVXManager *m=self.manager;
         Check(self.remoteThumbValid,@"remote collected image URL generated actual thumbnail with origin cookies");Check(PVXLinkedTask(PVXCollectedMedia(@"image")[0],PVXReadVideoTasks())!=nil,@"collection progress persists source-to-task UUID association");
-        [m.selectionButton sendActionsForControlEvents:UIControlEventTouchUpInside];
-        Check(m.selecting&&!m.batchBar.hidden&&!m.allButton.hidden,@"multiselect exposes real all checkbox and batch bar");
+        m.selecting=YES;m.batchBar.hidden=NO;
+        Check(m.selecting&&!m.batchBar.hidden,@"multiselect exposes real all checkbox and batch bar");
         [m.allButton sendActionsForControlEvents:UIControlEventTouchUpInside];
         Check(m.selection.count==2&&[m selectedRows].count==2&&m.batchExport.enabled&&[m.sectionLabel.text containsString:@"已选 2"],@"actual all checkbox selects two and updates batch count");
         [m.table layoutIfNeeded];
@@ -148,7 +148,7 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
         [m.view layoutIfNeeded]; [m.table layoutIfNeeded];
         Check(m.timer.valid&&m.visible,@"production one-second refresh timer active before menu");
         PVXMediaRow *dated=[m.table cellForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]];Check([dated.dateLabel.text hasPrefix:@"下载日期："]&&[dated.dateLabel.text containsString:@"/"]&&[dated.dateLabel.text containsString:@":"],@"real created timestamp rendered as month/day hour:minute");
-        [m showMenu:@[m.rows[0]] anchor:m.selectionButton];
+        [m showMenu:@[m.rows[0]] anchor:m.moreButton];
         Wait(80,^BOOL{ return [m.presentedViewController isKindOfClass:UIAlertController.class]; },^{
             UIAlertController *menu=(UIAlertController *)m.presentedViewController;
             // Deliberately cross more than two production one-second timer ticks.

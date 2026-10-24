@@ -9,7 +9,7 @@ def run(args):
  return r.stdout.strip()
 sdk=run(['xcrun','--sdk','iphoneos','--show-sdk-path'])
 flags=['xcrun','--sdk','iphoneos','clang','-arch','arm64e','-miphoneos-version-min=15.0','-isysroot',sdk,'-F'+sdk+'/System/Library/SubFrameworks','-fobjc-arc','-fblocks','-Os','-Wall','-Wextra','-Werror','-Wno-unused-parameter','-Wno-deprecated-declarations','-I',P/'src']
-frameworks=['Foundation','UIKit','WebKit','AVFoundation','AVFAudio','AVKit','ImageIO','CoreGraphics','CoreMedia','QuartzCore','UniformTypeIdentifiers']
+frameworks=['Foundation','UIKit','WebKit','AVFoundation','AVFAudio','AVKit','Photos','ImageIO','CoreGraphics','CoreMedia','QuartzCore','UniformTypeIdentifiers']
 fw=[]
 for f in frameworks:fw+=['-framework',f]
 run(flags+['-dynamiclib','-Wl,-install_name,@loader_path/PyVideoPlus.dylib','-o',B/'PyVideoPlus.dylib']+[P/'src'/(n+'.m') for n in ['Main','Images','Menus','Player','DownloadsUI','TaskSupport','PiPInline','Collection','MediaPreview','MediaQuality']]+fw)

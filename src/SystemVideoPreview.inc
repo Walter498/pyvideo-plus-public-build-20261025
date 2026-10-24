@@ -124,3 +124,5 @@ static void PVXOpenSystemVideo(NSDictionary *row) {
         });
     });
 }
+
+void PVXPlayVideoURL(NSString *url){NSURL *u=[NSURL URLWithString:url?:@""];if(!u.host.length||![@[@"http",@"https"] containsObject:u.scheme.lowercaseString]){PVXAlert(@"无法播放",@"视频 URL 无效。");return;}PVXPresentSystemVideo(u,@{});}
