@@ -475,6 +475,7 @@ void PVXExportTasks(NSArray<NSDictionary *> *tasks, UIView *anchor) {
         });
     });
 }
+void PVXExportTaskToFiles(NSDictionary *task) { PVXExportTasks(@[task], nil); }
 static NSString *PVXCloudDownloadsPath(void){
     NSString *home=NSHomeDirectory();
     NSArray *roots=@[[home stringByAppendingPathComponent:@"Library/Mobile Documents/com~apple~CloudDocs/Downloads"],[home stringByAppendingPathComponent:@"Library/Mobile Documents/com~apple~CloudDocs/下载项目"]];
