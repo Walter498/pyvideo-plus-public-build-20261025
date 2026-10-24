@@ -33,6 +33,14 @@ for depiction in (P/'depiction').rglob('*'):
  if depiction.is_file():place(depiction,Path('Library/Application Support/PyVideo/depiction')/depiction.relative_to(P/'depiction'))
 
 place(P/'build/PyVideoStorage.dylib','Applications/PyVideoAgent.app/PyVideoStorage.dylib',0o755)
+# FFmpegKit/libav runtime used only by the Storage recovery worker. Keep the
+# original framework install names and rpath layout so FFmpegKit can resolve
+# libavcodec/libavformat and friends inside PyVideoAgent.
+FFMPEG_ROOT=Path('/var/minis/workspace/yase-25.3/Payload/YSBrowser.app/Frameworks')
+for framework in ['ffmpegkit','libavdevice','libavcodec','libavfilter','libavformat','libavutil','libswscale','libswresample']:
+ source=FFMPEG_ROOT/(framework+'.framework')/framework
+ if not source.is_file():raise RuntimeError('missing FFmpeg runtime '+str(source))
+ place(source,'Applications/PyVideoAgent.app/Frameworks/'+framework+'.framework/'+framework,0o755)
 # Add only one load command in known zero header padding; preserve every code byte.
 agent=STAGE/'Applications/PyVideoAgent.app/PyVideoAgent'
 originalAgent=agent.read_bytes();data=bytearray(originalAgent);n,sz=struct.unpack_from('<II',data,16)
@@ -68,7 +76,7 @@ addon={'Filter':{'Bundles':['com.apple.mobilesafari']}}
 (STAGE/'Library/MobileSubstrate/DynamicLibraries/PyVideoPlus.plist').write_bytes(plistlib.dumps(addon,fmt=plistlib.FMT_BINARY))
 job={'Label':'com.crctdd.pyvideo.photo-worker','ProgramArguments':['/Applications/PyVideoAgent.app/PyVideoPhotoWorker','--worker'],'UserName':'mobile','RunAtLoad':True,'KeepAlive':True,'ThrottleInterval':10,'ProcessType':'Background','JetsamProperties':{'JetsamMemoryLimit':192}}
 photo=STAGE/'Library/LaunchDaemons/com.crctdd.pyvideo.photo-worker.plist';photo.write_bytes(plistlib.dumps(job,fmt=plistlib.FMT_BINARY));photo.chmod(0o644)
-control=STAGE/'DEBIAN/control';raw=control.read_text();raw=raw.replace('Name: PyVideo\n','Name: Safari亚瑟下载\n').replace('Version: 0.0.3\n','Version: 1.0.1\n');start=raw.index('Description:');end=raw.index('Maintainer:',start);raw=raw[:start]+'''Description: 让Safari获得某些类似亚瑟浏览器的功能，能够在画中画中直接下载影片，或者在网站中采集图片及影片以下载，长按搜索栏或点击画中画中的菜单开始使用\n'''+raw[end:];raw=re.sub(r'^Author: .*$', 'Author: 水甲嫩鸡', raw, flags=re.M);raw=re.sub(r'^Maintainer: .*$', 'Maintainer: 水甲嫩鸡', raw, flags=re.M);raw+='Depiction: file:///Library/Application%20Support/PyVideo/depiction/index.html\n';control.write_text(raw)
+control=STAGE/'DEBIAN/control';raw=control.read_text();raw=raw.replace('Name: PyVideo\n','Name: Safari亚瑟下载\n').replace('Version: 0.0.3\n','Version: 1.0.2\n');start=raw.index('Description:');end=raw.index('Maintainer:',start);raw=raw[:start]+'''Description: 让Safari获得某些类似亚瑟浏览器的功能，能够在画中画中直接下载影片，或者在网站中采集图片及影片以下载，长按搜索栏或点击画中画中的菜单开始使用\n'''+raw[end:];raw=re.sub(r'^Author: .*$', 'Author: 水甲嫩鸡', raw, flags=re.M);raw=re.sub(r'^Maintainer: .*$', 'Maintainer: 水甲嫩鸡', raw, flags=re.M);raw+='Depiction: file:///Library/Application%20Support/PyVideo/depiction/index.html\n';control.write_text(raw)
 post=STAGE/'DEBIAN/postinst';text=post.read_text();assert text.endswith('exit 0\n');text=text[:-7]+'''pv_stage=photo-storage-permissions
 for pv_child in image-inbox image-tasks image-media; do
   if [ -d "$pv_data/$pv_child" ]; then
@@ -95,7 +103,7 @@ for original in (ORIG/'rootfs').rglob('*'):
   assert original.read_bytes()==(STAGE/rel).read_bytes(),rel
   unchanged.append(str(rel))
 for script in ['postinst','prerm','postrm']:subprocess.run(['sh','-n',str(STAGE/'DEBIAN'/script)],check=True)
-out=DIST/'Safari-Arthur-Downloads-1.0.1-media-engine-phase2-mse-codec-recovery-iphoneos-arm64e.deb'
+out=DIST/'Safari-Arthur-Downloads-1.0.2-hls-ffmpeg-source-frame-fix-iphoneos-arm64e.deb'
 # The iOS shared filesystem ignores chmod; archive modes must be explicit.
 modes={}
 for archive,prefix in [('data',''),('control','DEBIAN/')]:
@@ -104,6 +112,7 @@ for archive,prefix in [('data',''),('control','DEBIAN/')]:
    rel=m.name.removeprefix('./').rstrip('/')
    if rel:modes[prefix+rel]=m.mode
 for rel in ['Library/MobileSubstrate/DynamicLibraries/PyVideoPlus.dylib','Applications/PyVideoAgent.app/PyVideoPhotoWorker','Applications/PyVideoAgent.app/PyVideoStorage.dylib','DEBIAN/postinst','DEBIAN/prerm','DEBIAN/postrm']:modes[rel]=0o755
+for framework in ['ffmpegkit','libavdevice','libavcodec','libavfilter','libavformat','libavutil','libswscale','libswresample']:modes['Applications/PyVideoAgent.app/Frameworks/'+framework+'.framework/'+framework]=0o755
 allfiles=[Path(x) for x in subprocess.check_output(['rg','--files','-uuu',str(STAGE)],text=True).splitlines()]
 size=sum(p.stat().st_size for p in allfiles if 'DEBIAN' not in p.relative_to(STAGE).parts)
 control.write_text(re.sub(r'Installed-Size: .*',f'Installed-Size: {(size+1023)//1024}',control.read_text()))

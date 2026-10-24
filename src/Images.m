@@ -18,7 +18,14 @@ static char PVXConfigKey,PVXGalleryKey;
 - (void)refresh;
 @end
 static BOOL PVXString(id v,NSUInteger n){return [v isKindOfClass:NSString.class]&&[v length]<=n;}
-static NSURL *PVXImageURL(id v){if(!PVXString(v,16384))return nil;NSURL *u=[NSURL URLWithString:v];return u.host.length&&([u.scheme.lowercaseString isEqual:@"https"]||[u.scheme.lowercaseString isEqual:@"http"])?u:nil;}
+static NSString *PVXMediaProtocol(id value){
+ if(!PVXString(value,16384))return nil;NSURL *u=PVXImageURL(value);if(!u)return nil;NSString *path=u.path.lowercaseString,*all=u.absoluteString.lowercaseString;
+ if([path hasSuffix:@".m3u8"]||[all containsString:@".m3u8?"])return @"hls";
+ if([path hasSuffix:@".mpd"]||[all containsString:@".mpd?"])return @"dash";
+ for(NSString *ext in @[@".mp4",@".m4v",@".webm",@".mov",@".mkv"]){if([path hasSuffix:ext]||[all containsString:[ext stringByAppendingString:@"?"]])return @"video";}
+ return nil;
+}
+static BOOL PVXSamePageURL(NSString *url,NSString *owner){return [url isEqual:owner];}
 static NSArray *PVXMatching(NSArray *cookies,NSURL *url){NSMutableArray *out=[NSMutableArray array];NSString *host=url.host.lowercaseString,*path=url.path.length?url.path:@"/";for(NSHTTPCookie *c in cookies){NSString *domain=c.domain.lowercaseString;BOOL sub=[domain hasPrefix:@"."];if(sub)domain=[domain substringFromIndex:1];BOOL match=[host isEqual:domain]||(sub&&[host hasSuffix:[@"." stringByAppendingString:domain]]);NSString *cp=c.path.length?c.path:@"/";BOOL pm=[path isEqual:cp]||([path hasPrefix:cp]&&([cp hasSuffix:@"/"]||(path.length>cp.length&&[path characterAtIndex:cp.length]=='/')));if(match&&pm&&(!c.secure||[url.scheme.lowercaseString isEqual:@"https"])&&(!c.expiresDate||c.expiresDate.timeIntervalSinceNow>0))[out addObject:c];}return out;}
 static NSDictionary *PVXHeaders(NSArray *cookies,NSURL *url,NSString *referer,NSString *ua){NSMutableDictionary *h=[NSMutableDictionary dictionary];if(PVXString(ua,16384)&&ua.length&&[ua rangeOfCharacterFromSet:NSCharacterSet.newlineCharacterSet].location==NSNotFound)h[@"User-Agent"]=ua;NSURLComponents *r=[NSURLComponents componentsWithString:referer];r.user=nil;r.password=nil;r.fragment=nil;if(r.URL&&(![r.scheme.lowercaseString isEqual:@"https"]||[url.scheme.lowercaseString isEqual:@"https"]))h[@"Referer"]=r.string;NSArray *cs=PVXMatching(cookies,url);if(cs.count)[h addEntriesFromDictionary:[NSHTTPCookie requestHeaderFieldsWithCookies:cs]];return h;}
 @implementation PVXMediaBridge
@@ -43,9 +50,9 @@ static NSDictionary *PVXHeaders(NSArray *cookies,NSURL *url,NSString *referer,NS
     NSMutableArray *videos=[snap[@"videos"] mutableCopy]?:[NSMutableArray array];NSMutableSet *seen=[NSMutableSet set];
     for(NSDictionary *old in videos)if([old[@"url"] isKindOfClass:NSString.class])[seen addObject:old[@"url"]];
     for(id raw in urls){
-        if(![raw isKindOfClass:NSString.class]||!PVXImageURL(raw))continue;
-        NSString *url=raw,*lower=url.lowercaseString,*protocol=[lower containsString:@".m3u8"]?@"hls":([lower containsString:@".mpd"]?@"dash":(([lower containsString:@".mp4"]||[lower containsString:@".m4s"])?@"video":@"network"));
-        if([seen containsObject:url])continue;[seen addObject:url];
+         NSString *url=[raw isKindOfClass:NSString.class]?raw:nil;NSString *protocol=PVXMediaProtocol(url);
+         /* Performance Timing has no MIME field: page URLs and transport fragments are not media candidates. */
+         if(!protocol||PVXSamePageURL(url,owner)||[seen containsObject:url])continue;[seen addObject:url];
         [videos addObject:@{ @"kind":@"video", @"url":url, @"protocol":protocol, @"sourceKind":@"performance", @"sources":@[@{ @"url":url, @"height":@0 }], @"height":@0, @"title":@"网页媒体源", @"poster":@"", @"page":owner, @"frame":owner, @"key":[NSString stringWithFormat:@"%@|video|%@",key,url] }];
     }
     snap[@"videos"]=videos;map[key]=snap;[[NSNotificationCenter defaultCenter] postNotificationName:@"PVXMediaChanged" object:w];
@@ -56,7 +63,23 @@ static NSDictionary *PVXHeaders(NSArray *cookies,NSURL *url,NSString *referer,NS
 NSArray<NSDictionary*> *PVXImageCollected(WKWebView *w){return [[PVXMediaBridge shared] imagesForWeb:w kind:@"images"];}
 NSArray<NSDictionary*> *PVXVideoCollected(WKWebView *w){return [[PVXMediaBridge shared] videosForWeb:w];}
 void PVXRefreshImages(WKWebView *w){[[PVXMediaBridge shared] configure:w.configuration];[[PVXMediaBridge shared] refreshForWeb:w];}
-void PVXValidateCollected(WKWebView *web,NSDictionary *row,void(^done)(BOOL,NSString*)){if(!NSThread.isMainThread){dispatch_async(dispatch_get_main_queue(),^{PVXValidateCollected(web,row,done);});return;}WKFrameInfo *frame=nil;for(NSDictionary *s in [[[PVXMediaBridge shared] frames] objectForKey:web].allValues){if([s[@"owner"] isEqual:web.URL.absoluteString]&&[s[@"frameURL"] isEqual:row[@"frame"]]&&[s[@"videos"] count]+[s[@"images"] count]>0){frame=s[@"frameInfo"];break;}}if(!frame){done(NO,nil);return;}id b=PVXBrowser();WKContentWorld *world=PVXGet(b,@"world");if(@available(iOS 14.0,*))world=[WKContentWorld pageWorld];else if(![world isKindOfClass:WKContentWorld.class])world=WKContentWorld.defaultClientWorld;NSString *script=@"(()=>{const c=globalThis.__pvxMedia_v1;const s=c&&c.snapshot();return s&&{page:s.page,documentID:s.documentID,images:s.images,videos:s.videos,agent:navigator.userAgent};})()";[web evaluateJavaScript:script inFrame:frame inContentWorld:world completionHandler:^(id result,NSError *error){NSDictionary *snapshot=[result isKindOfClass:NSDictionary.class]?result:nil;NSString *page=snapshot[@"page"],*agent=snapshot[@"agent"];BOOL sourceMatches=NO;NSArray *rows=[row[@"kind"] isEqual:@"image"]?snapshot[@"images"]:snapshot[@"videos"];if([rows isKindOfClass:NSArray.class])for(NSDictionary *fresh in rows){if([fresh[@"url"] isEqual:row[@"url"]])sourceMatches=YES;for(NSDictionary *source in fresh[@"sources"])if([source[@"url"] isEqual:row[@"url"]])sourceMatches=YES;}BOOL valid=!error&&[page isKindOfClass:NSString.class]&&[page isEqual:row[@"frame"]]&&[snapshot[@"documentID"] isEqual:row[@"documentID"]]&&PVXImageURL(page)&&sourceMatches;done(valid,[agent isKindOfClass:NSString.class]?agent:@"");}];}
+static BOOL PVXSnapshotContainsURL(NSDictionary *snapshot,NSDictionary *row){
+ NSString *wanted=row[@"url"];if(![wanted isKindOfClass:NSString.class])return NO;
+ NSArray *rows=[row[@"kind"] isEqual:@"image"]?snapshot[@"images"]:snapshot[@"videos"];
+ if(![rows isKindOfClass:NSArray.class])return NO;
+ for(NSDictionary *fresh in rows){
+  if([fresh[@"url"] isEqual:wanted])return YES;
+  for(NSDictionary *source in fresh[@"sources"])if([source[@"url"] isEqual:wanted])return YES;
+ }
+ return NO;
+}
+void PVXValidateCollected(WKWebView *web,NSDictionary *row,void(^done)(BOOL,NSString*)){if(!NSThread.isMainThread){dispatch_async(dispatch_get_main_queue(),^{PVXValidateCollected(web,row,done);});return;}if(!web||![row isKindOfClass:NSDictionary.class]){done(NO,@"");return;}NSString *owner=web.URL.absoluteString?:@"",*frameURL=row[@"frame"]?:row[@"page"];if(![owner isEqual:frameURL]){done(NO,@"");return;}
+ WKFrameInfo *frame=nil;for(NSDictionary *s in [[[PVXMediaBridge shared] frames] objectForKey:web].allValues){if([s[@"owner"] isEqual:owner]&&[s[@"frameURL"] isEqual:frameURL]){frame=s[@"frameInfo"];if(frame)break;}}
+ id b=PVXBrowser();WKContentWorld *world=PVXGet(b,@"world");if(@available(iOS 14.0,*))world=[WKContentWorld pageWorld];else if(![world isKindOfClass:WKContentWorld.class])world=WKContentWorld.defaultClientWorld;
+ NSString *script=@"(()=>{const c=globalThis.__pvxMedia_v1;const s=c&&c.snapshot();return s&&{page:s.page,documentID:s.documentID,images:s.images,videos:s.videos,agent:navigator.userAgent};})()";
+ void(^finishSnapshot)(id,NSError*)=^(id result,NSError *error){NSDictionary *snapshot=[result isKindOfClass:NSDictionary.class]?result:nil;NSString *page=snapshot[@"page"],*agent=snapshot[@"agent"];BOOL samePage=!error&&[page isKindOfClass:NSString.class]&&[page isEqual:owner];BOOL source= samePage&&PVXSnapshotContainsURL(snapshot,row);/* Performance candidates are intentionally validated by URL and current page, not stale documentID. */if(!source&&samePage&&[row[@"sourceKind"] isEqual:@"performance"]&&PVXMediaProtocol(row[@"url"]))source=YES;BOOL valid=samePage&&source;done(valid,[agent isKindOfClass:NSString.class]?agent:@"");};
+ if(frame&&!frame.isMainFrame)[web evaluateJavaScript:script inFrame:frame inContentWorld:world completionHandler:finishSnapshot];else [web evaluateJavaScript:script inFrame:nil inContentWorld:world completionHandler:finishSnapshot];
+}
 NSDictionary *PVXActiveVideo(void){return [[PVXMediaBridge shared] active];}
 
 @interface PVXThumbnail : NSObject<NSURLSessionDataDelegate>
