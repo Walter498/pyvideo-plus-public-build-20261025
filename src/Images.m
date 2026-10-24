@@ -18,6 +18,7 @@ static char PVXConfigKey,PVXGalleryKey;
 - (void)refresh;
 @end
 static BOOL PVXString(id v,NSUInteger n){return [v isKindOfClass:NSString.class]&&[v length]<=n;}
+static NSURL *PVXImageURL(id v){if(!PVXString(v,16384))return nil;NSURL *u=[NSURL URLWithString:v];return u.host.length&&([u.scheme.lowercaseString isEqual:@"https"]||[u.scheme.lowercaseString isEqual:@"http"])?u:nil;}
 static NSString *PVXMediaProtocol(id value){
  if(!PVXString(value,16384))return nil;NSURL *u=PVXImageURL(value);if(!u)return nil;NSString *path=u.path.lowercaseString,*all=u.absoluteString.lowercaseString;
  if([path hasSuffix:@".m3u8"]||[all containsString:@".m3u8?"])return @"hls";
