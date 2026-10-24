@@ -16,6 +16,8 @@ extern void PVXAlert(NSString *, NSString *);
 #import <unistd.h>
 #import <stdlib.h>
 #import <objc/runtime.h>
+BOOL PVXAutoSavePhotos(void);
+void PVXSetAutoSavePhotos(BOOL enabled);
 
 static BOOL PVXUUID(id x) {
     return [x isKindOfClass:NSString.class] && [x length] == 36 &&
