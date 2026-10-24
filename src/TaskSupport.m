@@ -154,8 +154,9 @@ static NSMutableDictionary *PVXPublicRow(NSDictionary *raw, NSString *kind) {
         if (v.length) row[key] = v;
     }
     // Worker errors can embed signed URLs or credentials. Use a safe status explanation.
-    [row removeObjectForKey:@"error"];
-    if ([raw[@"state"] isEqual:@"failed"]) row[@"error"] = @"下载失败，请重试或检查服务";
+    NSString *diagnostic=PVXSafeText(raw[@"error"],320);[row removeObjectForKey:@"error"];
+    if(diagnostic.length&&[diagnostic rangeOfCharacterFromSet:NSCharacterSet.newlineCharacterSet].location==NSNotFound)row[@"error"]=diagnostic;
+    else if ([raw[@"state"] isEqual:@"failed"]) row[@"error"] = @"下载失败，请重试或检查服务";
     for (NSString *key in @[@"created", @"updated", @"received", @"total", @"segmentsDone", @"segmentsTotal", @"conversionProgress"]) {
         if ([raw[key] isKindOfClass:NSNumber.class]) row[key] = raw[key];
     }
@@ -523,7 +524,7 @@ NSDictionary *PVXTaskPresentation(NSDictionary *task) {
     NSString *state = PVXSafeText(task[@"state"], 40);
     BOOL local = PVXTaskHasLocalFile(task), complete = PVXComplete(task);
     NSDictionary *names = @{@"submitted":@"请求已排队 · 等待服务接收", @"serviceUnavailable":@"下载服务未响应（超过15秒）", @"queued":@"等待下载", @"downloading":@"下载中", @"hls":@"下载中", @"remuxing":@"正在封装", @"checking":@"校验中", @"converting":@"转换中", @"ready":@"下载完成", @"saved":@"下载完成", @"completed":@"下载完成", @"albumFailed":@"下载完成", @"uncertain":@"下载完成", @"failed":@"下载失败", @"pausing":@"正在暂停", @"paused":@"已暂停", @"deleting":@"正在删除", @"saving":@"正在处理"};
-    NSString *status = complete && !local ? @"本地原文件缺失 · 需重新下载" : names[state] ?: @"等待处理";
+    NSString *status = complete && !local ? @"本地原文件缺失 · 需重新下载" : names[state] ?: @"等待处理";if([state isEqual:@"failed"]&&PVXSafeText(task[@"error"],240).length)status=[NSString stringWithFormat:@"下载失败：%@",PVXSafeText(task[@"error"],240)];
     BOOL success = complete && local;
     BOOL fail = [@[@"failed", @"serviceUnavailable"] containsObject:state] || (complete && !local);
     long long received = PVXBytes(task[@"received"]), total = PVXBytes(task[@"total"]);

@@ -100,6 +100,7 @@ static int PVXRetainDisk(const char *source, const char *dest) {
 
 #ifndef PVX_STORAGE_IO_TEST
 #import <Foundation/Foundation.h>
+#import <AVFoundation/AVFoundation.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <mach-o/dyld.h>
@@ -130,6 +131,10 @@ static void (*OldExport)(id, SEL);
 static void (*OldFinish)(id, SEL, id, BOOL, id, id);
 static BOOL (*OldRemove)(id, SEL, id, NSError **);
 static void (*OldDelete)(id, SEL, id);
+static void (*OldPump)(id, SEL);
+static BOOL (*Persist)(id, SEL, id);
+static NSMutableSet *RecoveryAttempted;
+static NSMutableDictionary *RecoveryExports;
 static __weak id Worker;
 static dispatch_source_t Timer;
 static int NotificationToken;
@@ -156,9 +161,34 @@ static id TasksView(id self, SEL cmd) {
     if (ViewOwner == (__bridge void *)self && ViewTasks) return (__bridge id)ViewTasks;
     return OldTasks(self, cmd);
 }
+static long long PVXSegmentIndex(NSString *url){
+    NSString *stem=url.stringByDeletingPathExtension;long long last=-1;NSUInteger i=0;
+    while(i<stem.length){while(i<stem.length&&![NSCharacterSet.decimalDigitCharacterSet characterIsMember:[stem characterAtIndex:i]])i++;if(i>=stem.length)break;NSUInteger start=i;while(i<stem.length&&[NSCharacterSet.decimalDigitCharacterSet characterIsMember:[stem characterAtIndex:i]])i++;NSString *n=[stem substringWithRange:NSMakeRange(start,i-start)];last=n.longLongValue;}
+    return last;
+}
+static NSArray *PVXOrderedHLSFiles(NSString *uuid){
+    NSString *dir=Path([NSString stringWithFormat:@"media/%@.hls",uuid]);NSArray *names=[[NSFileManager defaultManager] contentsOfDirectoryAtPath:dir error:nil];NSMutableArray *rows=[NSMutableArray array];
+    for(NSString *name in names){if(![name.pathExtension isEqual:@"plist"]||![name hasSuffix:@".ts.plist"])continue;NSDictionary *meta=[NSDictionary dictionaryWithContentsOfFile:[dir stringByAppendingPathComponent:name]];NSString *response=meta[@"responseURL"];if(![response isKindOfClass:NSString.class])continue;NSString *ts=[name substringToIndex:name.length-6];NSString *path=[dir stringByAppendingPathComponent:ts];BOOL file=NO;[[NSFileManager defaultManager] fileExistsAtPath:path isDirectory:&file];if(file)continue;struct stat st;if(lstat(path.fileSystemRepresentation,&st)||!S_ISREG(st.st_mode)||st.st_size<=0)continue;[rows addObject:@{ @"index":@(PVXSegmentIndex(response)), @"url":response, @"path":path }];}
+    [rows sortUsingComparator:^NSComparisonResult(NSDictionary*a,NSDictionary*b){long long x=[a[@"index"] longLongValue],y=[b[@"index"] longLongValue];if(x>=0&&y>=0&&x!=y)return x<y?NSOrderedAscending:NSOrderedDescending;return [a[@"url"] compare:b[@"url"]];}];return rows;
+}
+static BOOL PVXConcatHLS(NSArray *rows,NSString *path){
+    [[NSFileManager defaultManager] removeItemAtPath:path error:nil];if(![[NSFileManager defaultManager] createFileAtPath:path contents:nil attributes:nil])return NO;NSFileHandle*out=[NSFileHandle fileHandleForWritingAtPath:path];if(!out)return NO;BOOL ok=YES;
+    for(NSDictionary *row in rows){NSFileHandle*in=[NSFileHandle fileHandleForReadingAtPath:row[@"path"]];if(!in){ok=NO;break;}@try{while(true){NSData*d=[in readDataOfLength:1024*1024];if(!d.length)break;[out writeData:d];}}@catch(NSException*e){ok=NO;}[in closeFile];if(!ok)break;}
+    [out synchronizeFile];[out closeFile];return ok;
+}
+static void PVXFinishRecovery(id agent,NSString*uuid,NSString*temp,BOOL success,NSError*error){
+    [RecoveryExports removeObjectForKey:uuid];NSString *dest=Path([NSString stringWithFormat:@"media/%@.mp4",uuid]);
+    if(success){[[NSFileManager defaultManager] removeItemAtPath:dest error:nil];}if(success&&[[NSFileManager defaultManager] moveItemAtPath:temp toPath:dest error:&error]){struct stat st;NSMutableDictionary*t=[[[agent tasks] objectForKey:uuid] mutableCopy];if(t&&!lstat(dest.fileSystemRepresentation,&st)){t[@"state"]=@"ready";t[@"fileComplete"]=@YES;t[@"received"]=@(st.st_size);t[@"total"]=@(st.st_size);t[@"mediaBytes"]=@(st.st_size);[t removeObjectForKey:@"error"];[[agent tasks] setObject:t forKey:uuid];if(Persist)Persist(agent,@selector(persist:),t);Notify(Signal);return;}}
+    [[NSFileManager defaultManager] removeItemAtPath:temp error:nil];NSMutableDictionary*t=[[[agent tasks] objectForKey:uuid] mutableCopy];if(t&&error.localizedDescription.length){t[@"error"]=[NSString stringWithFormat:@"HLS恢复封装失败：%@",error.localizedDescription];[[agent tasks] setObject:t forKey:uuid];if(Persist)Persist(agent,@selector(persist:),t);Notify(Signal);}
+}
+static void PVXStartRecoveryExport(id agent,NSString*uuid,NSString*ts,NSInteger attempt){
+    NSString *temp=Path([NSString stringWithFormat:@"media/%@.recovery.mp4",uuid]);[[NSFileManager defaultManager] removeItemAtPath:temp error:nil];AVURLAsset*asset=[AVURLAsset URLAssetWithURL:[NSURL fileURLWithPath:ts] options:nil];NSString*preset=attempt==0?AVAssetExportPresetPassthrough:AVAssetExportPresetHighestQuality;AVAssetExportSession*e=[[AVAssetExportSession alloc] initWithAsset:asset presetName:preset];if(!e){NSError*err=[NSError errorWithDomain:@"PVXRecovery" code:1 userInfo:@{NSLocalizedDescriptionKey:@"AVAssetExportSession unavailable"}];PVXFinishRecovery(agent,uuid,temp,NO,err);return;}e.outputURL=[NSURL fileURLWithPath:temp];e.outputFileType=AVFileTypeMPEG4;e.shouldOptimizeForNetworkUse=NO;RecoveryExports[uuid]=e;[e exportAsynchronouslyWithCompletionHandler:^{dispatch_async(dispatch_get_main_queue(),^{if(e.status==AVAssetExportSessionStatusCompleted){PVXFinishRecovery(agent,uuid,temp,YES,nil);return;}if(attempt==0){PVXStartRecoveryExport(agent,uuid,ts,1);return;}NSError*err=e.error?:[NSError errorWithDomain:@"PVXRecovery" code:2 userInfo:@{NSLocalizedDescriptionKey:@"MPEG-TS无法封装为MP4"}];PVXFinishRecovery(agent,uuid,temp,NO,err);});}];
+}
+static void PVXRecoverFailedHLS(id agent,NSDictionary*task){NSString*uuid=task[@"id"];if(!ValidID(uuid)||[RecoveryAttempted containsObject:uuid])return;RecoveryAttempted?:(RecoveryAttempted=[NSMutableSet set]);[RecoveryAttempted addObject:uuid];dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{NSArray*rows=PVXOrderedHLSFiles(uuid);if(rows.count<2)return;NSString*ts=Path([NSString stringWithFormat:@"media/%@.recovery.ts",uuid]);if(!PVXConcatHLS(rows,ts))return;dispatch_async(dispatch_get_main_queue(),^{PVXStartRecoveryExport(agent,uuid,ts,0);});});}
+static void PVXScanFailedHLS(id agent){for(NSDictionary*t in [[agent tasks] allValues]){if([t[ @"state"] isEqual:@"failed"]&&[t[@"error"] isKindOfClass:NSString.class]&&[t[@"error"] containsString:@"HLS 封装失败"])PVXRecoverFailedHLS(agent,t);}}
 static void Tick(void) {
     id agent = Worker;
-    if (agent && [agent workerMode] && [agent reconciled]) [agent exportReady];
+    if (agent && [agent workerMode] && [agent reconciled]) { [agent exportReady]; PVXScanFailedHLS(agent); }
 }
 static BOOL Start(id self, SEL cmd) {
     BOOL result = OldStart(self, cmd);
@@ -241,7 +271,6 @@ static void Delete(id self, SEL cmd, id uuid) {
     }
 }
 
-static void (*OldPump)(id, SEL);
 static NSInteger PVXConfiguredParallel(void){NSDictionary *v=[NSDictionary dictionaryWithContentsOfFile:Path(@"plus-preferences.plist")];NSInteger n=[v[@"parallelDownloads"] integerValue];return n>=1&&n<=15?n:5;}
 static void PVXPumpWithConfiguredLimit(id self, SEL cmd){
     OldPump(self,cmd);
@@ -259,8 +288,6 @@ static void Clear(id self, SEL cmd) {
     BOOL wasClearing = [self clearingRequest] != nil;
     OldClear(self, cmd);
     if (!wasClearing || [self clearingRequest] || [OldTasks(self, @selector(tasks)) count]) return;
-    // Original clear-download list excludes our directory. Only after its barrier
-    // completed, delete UUID-named retained leaves; never follow directory links.
     NSString *dir = Path(@"retained");
     if (!SafeDirectory(dir)) return;
     DIR *d = opendir(dir.fileSystemRepresentation);
@@ -269,12 +296,11 @@ static void Clear(id self, SEL cmd) {
     while ((e = readdir(d))) {
         NSString *name = [[NSString alloc] initWithUTF8String:e->d_name];
         NSString *uuid = [name hasSuffix:@".mp4.plist"] ? [name substringToIndex:name.length - 10] : name.stringByDeletingPathExtension;
-        if (ValidID(uuid) && ([name hasSuffix:@".mp4"] || [name hasSuffix:@".mp4.plist"])) {
-            unlink([dir stringByAppendingPathComponent:name].fileSystemRepresentation);
-        }
+        if (ValidID(uuid) && ([name hasSuffix:@".mp4"] || [name hasSuffix:@".mp4.plist"])) unlink([dir stringByAppendingPathComponent:name].fileSystemRepresentation);
     }
     closedir(d);
 }
+
 static BOOL Signature(Class cls, SEL sel, const char *ret, unsigned count, const char **args) {
     Method method = class_getInstanceMethod(cls, sel);
     if (!method || method_getNumberOfArguments(method) != count + 2) return NO;
@@ -319,6 +345,7 @@ static void Install(void) {
         if (!c || !Signature(c, @selector(startWorker), "B", 0, NULL) ||
             !Signature(c, @selector(exportReady), "v", 0, NULL) ||
             !Signature(c, @selector(pump), "v", 0, NULL) ||
+            !Signature(c, @selector(persist:), "B", 1, one) ||
             !Signature(c, NSSelectorFromString(@"startTask:hlsURL:"), "v", 2, twoObjects) ||
             !Signature(c, @selector(tasks), "@", 0, NULL) ||
             !Signature(c, @selector(workerMode), "B", 0, NULL) ||
@@ -330,6 +357,8 @@ static void Install(void) {
             !Signature(c, NSSelectorFromString(@"finishDeletion:"), "v", 1, one) ||
             !Signature(c, NSSelectorFromString(@"finishClearAll"), "v", 0, NULL) ||
             !Signature(NSFileManager.class, @selector(removeItemAtPath:error:), "B", 2, removeArgs)) return;
+        RecoveryAttempted=[NSMutableSet set];RecoveryExports=[NSMutableDictionary dictionary];
+        Persist=(void *)class_getMethodImplementation(c,@selector(persist:));
         Hook = (void *)dlsym(RTLD_DEFAULT, "MSHookMessageEx");
         if (!Hook) {
             NSString *base = [NSProcessInfo.processInfo.arguments.firstObject stringByDeletingLastPathComponent];
