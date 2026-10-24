@@ -59,7 +59,7 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
     Web.navigationDelegate=self; [Host.view addSubview:Web];
     NSString *base=NSProcessInfo.processInfo.environment[@"PVX_FIXTURE_URL"];
     Check([base hasPrefix:@"http://127.0.0.1:"],@"real localhost fixture URL supplied");
-    NSString *html=@"<!doctype html><html><head><title>WebKit beta3 fixture</title></head><body><img width='96' height='96' src='real.png' title='real image'><video width='160' height='90' preload='none' src='real.mp4' title='real video'></video></body></html>";
+    NSString *html=@"<!doctype html><html><head><title>WebKit beta3 fixture</title></head><body><img width='96' height='96' src='real.png' title='real image'><video width='160' height='90' preload='none' src='real.mp4' title='real video'></video><script>fetch('real.mp4').then(r=>r.arrayBuffer());const ms=new MediaSource();const runtime=document.createElement('video');runtime.src=URL.createObjectURL(ms);runtime.title='MSE runtime fixture';document.body.appendChild(runtime);</script></body></html>";
     [Web loadHTMLString:html baseURL:[NSURL URLWithString:base]];
     return YES;
 }
@@ -74,7 +74,7 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
 - (void)submit {
     NSArray *images=PVXCollectedMedia(@"image"),*videos=PVXCollectedMedia(@"video");
     Check(images.count==1&&videos.count==1,@"real collected types: one image and one video");
-    Check([images[0][@"url"] hasSuffix:@"/real.png"]&&[videos[0][@"url"] hasSuffix:@"/real.mp4"],@"real DOM URLs preserved");
+    Check([images[0][@"url"] hasSuffix:@"/real.png"]&&[videos[0][@"url"] hasSuffix:@"/real.mp4"]&&[videos[0][@"protocol"] isEqual:@"video"],@"network fetch media URL and MIME protocol classification are preserved");
     Check([images[0][@"documentID"] length]>0,@"native message carries real document identity");
     PVXFetchTaskThumbnail(images[0],^(UIImage *image){self.remoteThumbValid=image!=nil;});
     PVXSubmitMedia(images[0],^(NSDictionary *receipt,NSString *error){
