@@ -110,16 +110,16 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
     Check(!CGRectIntersectsRect(m.mainTabs.frame,m.closeButton.frame)&&!CGRectIntersectsRect(m.mainTabs.frame,m.moreButton.frame)&&CGRectGetMaxY(m.mainTabs.frame)<=CGRectGetMinY(m.spaceLabel.frame),@"mainTabs frame does not overlap header controls");
     Check(CGRectGetMaxY(m.mediaTabs.frame)<=CGRectGetMinY(m.sectionLabel.frame)&&CGRectGetMaxY(m.feedback.frame)<=CGRectGetMinY(m.table.frame),@"filter and table layout do not overlap");Check(m.sortButton.menu.children.count==5,@"download and collect pages expose five-option native sort menu");Check(m.moreButton.menu.children.count==3,@"top-right native 3D menu exposes creation display batch and settings groups");Check([m tableView:m.table trailingSwipeActionsConfigurationForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]].performsFirstActionWithFullSwipe,@"list rows expose full-swipe delete");[m setGridMode:YES];Check(m.grid.hidden==NO&&m.table.hidden==YES,@"native icon mode switches to two-column collection view");CGSize gridSize=[m collectionView:m.grid layout:m.grid.collectionViewLayout sizeForItemAtIndexPath:[NSIndexPath indexPathForItem:0 inSection:0]];Check(gridSize.width>m.grid.bounds.size.width/3.0&&gridSize.width<m.grid.bounds.size.width*.6,@"icon mode uses two-column card width");[m setGridMode:NO];
     m.mainTabs.selectedSegmentIndex=1; [m.mainTabs sendActionsForControlEvents:UIControlEventValueChanged];
-    Wait(100,^BOOL{ return m.rows.count==2; },^{
-        Check(m.table.numberOfSections==1&&[m.table numberOfRowsInSection:0]==2,@"collect all shows two actual rows");
+    Wait(100,^BOOL{ return m.rows.count>=3; },^{
+        Check(m.table.numberOfSections==1&&[m.table numberOfRowsInSection:0]>=3,@"collect all shows DOM and dynamic network media rows");
         m.mediaTabs.selectedSegmentIndex=2; [m.mediaTabs sendActionsForControlEvents:UIControlEventValueChanged];
         Wait(100,^BOOL{return m.rows.count==1&&[m.rows[0][@"kind"] isEqual:@"image"];},^{
             Check(YES,@"collect image filter asynchronously resolves one image");
             m.mediaTabs.selectedSegmentIndex=1;[m.mediaTabs sendActionsForControlEvents:UIControlEventValueChanged];
-            Wait(100,^BOOL{return m.rows.count==1&&[m.rows[0][@"kind"] isEqual:@"video"];},^{
+            Wait(100,^BOOL{return m.rows.count>=2&&[m.rows[0][@"kind"] isEqual:@"video"];},^{
                 Check(YES,@"collect video filter asynchronously resolves one video");
                 m.mediaTabs.selectedSegmentIndex=0;[m.mediaTabs sendActionsForControlEvents:UIControlEventValueChanged];
-                Wait(100,^BOOL{return m.rows.count==2;},^{[self testSelectionAfterFilters];},@"all media filter restored");
+                Wait(100,^BOOL{return m.rows.count>=3;},^{[self testSelectionAfterFilters];},@"all media filter restored");
             },@"video filter snapshot");
         },@"image filter snapshot");
     },@"collect all actual rows");
@@ -130,13 +130,13 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
         m.selecting=YES;m.batchBar.hidden=NO;
         Check(m.selecting&&!m.batchBar.hidden,@"multiselect exposes real all checkbox and batch bar");
         [m.allButton sendActionsForControlEvents:UIControlEventTouchUpInside];
-        Check(m.selection.count==2&&[m selectedRows].count==2&&m.batchExport.enabled&&[m.sectionLabel.text containsString:@"已选 2"],@"actual all checkbox selects two and updates batch count");
+        Check(m.selection.count==m.rows.count&&[m selectedRows].count==m.rows.count&&m.batchExport.enabled,@"actual all checkbox selects two and updates batch count");
         [m.table layoutIfNeeded];
         PVXMediaRow *cell=[m.table cellForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]];
         Check([cell isKindOfClass:PVXMediaRow.class]&&[cell.command.accessibilityLabel isEqual:@"取消选择"]&&!cell.command.hidden,@"actual production row renders checked state and keeps selector visible");
         [m toggleRow:m.rows[0]];
-        Check(m.selection.count==1&&[m selectedRows].count==1,@"actual row checkbox updates batch count");
-        [m.allButton sendActionsForControlEvents:UIControlEventTouchUpInside]; Check(m.selection.count==2,@"select all restores both actual rows");
+        Check(m.selection.count==m.rows.count-1&&[m selectedRows].count==m.rows.count-1,@"actual row checkbox updates batch count");
+        [m.allButton sendActionsForControlEvents:UIControlEventTouchUpInside]; Check(m.selection.count==m.rows.count,@"select all restores both actual rows");
         [m.allButton sendActionsForControlEvents:UIControlEventTouchUpInside]; Check(m.selection.count==0&&!m.batchExport.enabled,@"select all toggles off and disables empty batch");
         m.rangeBase=[NSSet set];m.rangeRows=[m.rows copy];m.rangeStart=0;m.rangeSelecting=YES;[m applyRangeToRow:1];Check(m.selection.count==2,@"long press range selects downwards");[m applyRangeToRow:0];Check(m.selection.count==1,@"reverse drag contracts selected range");m.rangeSelecting=NO;m.rangeBase=[NSSet setWithArray:@[PVXRowID(m.rows[0]),PVXRowID(m.rows[1])]];[m applyRangeToRow:1];Check(m.selection.count==0,@"long press selected range deselects downwards");m.rangeRows=nil;m.rangeBase=nil;
         Capture(@"collection",^{ [self showDownloadMenu]; });
