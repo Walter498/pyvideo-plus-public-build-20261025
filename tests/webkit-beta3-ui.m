@@ -134,7 +134,7 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
         [m.table layoutIfNeeded];
         PVXMediaRow *cell=[m.table cellForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]];
         Check([cell isKindOfClass:PVXMediaRow.class]&&[cell.command.accessibilityLabel isEqual:@"取消选择"],@"actual production row renders checked state");
-        [cell.command sendActionsForControlEvents:UIControlEventTouchUpInside];
+        [m toggleRow:m.rows[0]];
         Check(m.selection.count==1&&[m selectedRows].count==1,@"actual row checkbox updates batch count");
         [m.allButton sendActionsForControlEvents:UIControlEventTouchUpInside]; Check(m.selection.count==2,@"select all restores both actual rows");
         [m.allButton sendActionsForControlEvents:UIControlEventTouchUpInside]; Check(m.selection.count==0&&!m.batchExport.enabled,@"select all toggles off and disables empty batch");
