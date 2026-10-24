@@ -35,6 +35,8 @@ FOUNDATION_EXPORT void PVXExportTaskToFiles(NSDictionary *task);
 FOUNDATION_EXPORT void PVXSaveTaskToPhotos(NSDictionary *task);
 FOUNDATION_EXPORT void PVXSaveTaskToFiles(NSDictionary *task);
 FOUNDATION_EXPORT void PVXApplyAutoSavePreferences(NSArray<NSDictionary*> *tasks);
+FOUNDATION_EXPORT NSInteger PVXParallelLimit(void);
+FOUNDATION_EXPORT void PVXSetParallelLimit(NSInteger limit);
 FOUNDATION_EXPORT void PVXCreateDownloadFolder(NSString *name, void(^ _Nullable completion)(BOOL ok, NSString * _Nullable error));
 FOUNDATION_EXPORT void PVXFetchTaskThumbnail(NSDictionary *task, void(^completion)(UIImage * _Nullable));
 FOUNDATION_EXPORT NSDictionary *PVXTaskPresentation(NSDictionary *task);

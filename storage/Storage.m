@@ -241,6 +241,19 @@ static void Delete(id self, SEL cmd, id uuid) {
     }
 }
 
+static void (*OldPump)(id, SEL);
+static NSInteger PVXConfiguredParallel(void){NSDictionary *v=[NSDictionary dictionaryWithContentsOfFile:Path(@"plus-preferences.plist")];NSInteger n=[v[@"parallelDownloads"] integerValue];return n>=1&&n<=15?n:5;}
+static void PVXPumpWithConfiguredLimit(id self, SEL cmd){
+    OldPump(self,cmd);
+    if(![self workerMode]||![self reconciled]||![self memoryReady])return;
+    NSMutableDictionary *tasks=[self tasks],*jobs=[self valueForKey:@"jobs"],*checks=[self valueForKey:@"checks"];if(!tasks||!jobs||!checks)return;
+    NSInteger limit=PVXConfiguredParallel(),active=(NSInteger)jobs.count+(NSInteger)checks.count;if(active>=limit)return;
+    for(NSDictionary *task in [tasks.allValues copy]){
+        if(active>=limit||![task isKindOfClass:NSDictionary.class]||![task[@"state"] isEqual:@"queued"]||!ValidID(task[@"id"])||jobs[task[@"id"]]||checks[task[@"id"]])continue;
+        NSString *hls=[task[@"hlsSourceURL"] isKindOfClass:NSString.class]?task[@"hlsSourceURL"]:nil;
+        ((void(*)(id,SEL,id,id))objc_msgSend)(self,NSSelectorFromString(@"startTask:hlsURL:"),task,hls);active++;
+    }
+}
 static void (*OldClear)(id, SEL);
 static void Clear(id self, SEL cmd) {
     BOOL wasClearing = [self clearingRequest] != nil;
@@ -301,9 +314,12 @@ static void Install(void) {
         const char *finishArgs[] = {"@", "B", "@", "@"};
         const char *one[] = {"@"};
         const char *removeArgs[] = {"@", "^@"};
+        const char *twoObjects[] = {"@", "@"};
         // All checks happen before any mutation. Unsupported ABI leaves original intact.
         if (!c || !Signature(c, @selector(startWorker), "B", 0, NULL) ||
             !Signature(c, @selector(exportReady), "v", 0, NULL) ||
+            !Signature(c, @selector(pump), "v", 0, NULL) ||
+            !Signature(c, NSSelectorFromString(@"startTask:hlsURL:"), "v", 2, twoObjects) ||
             !Signature(c, @selector(tasks), "@", 0, NULL) ||
             !Signature(c, @selector(workerMode), "B", 0, NULL) ||
             !Signature(c, @selector(reconciled), "B", 0, NULL) ||
@@ -336,6 +352,7 @@ static void Install(void) {
         }
         if (!SafeDirectory(Root())) return;
         Hook(c, @selector(tasks), (IMP)TasksView, (IMP *)&OldTasks);
+        Hook(c, @selector(pump), (IMP)PVXPumpWithConfiguredLimit, (IMP *)&OldPump);
         Hook(NSFileManager.class, @selector(removeItemAtPath:error:), (IMP)Remove, (IMP *)&OldRemove);
         Hook(c, NSSelectorFromString(@"finishExport:success:error:assetID:"), (IMP)Finish, (IMP *)&OldFinish);
         Hook(c, NSSelectorFromString(@"finishDeletion:"), (IMP)Delete, (IMP *)&OldDelete);
