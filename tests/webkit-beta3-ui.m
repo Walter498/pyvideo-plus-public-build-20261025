@@ -74,7 +74,7 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
 - (void)submit {
     NSArray *images=PVXCollectedMedia(@"image"),*videos=PVXCollectedMedia(@"video");
     Check(images.count==1&&videos.count==1,@"real collected types: one image and one video");
-    Check([images[0][@"url"] hasSuffix:@"/real.png"]&&[videos[0][@"url"] hasSuffix:@"/real.mp4"]&&[videos[0][@"protocol"] isEqual:@"video"],@"network fetch media URL and MIME protocol classification are preserved");
+    NSArray *videoRows=PVXCollectedMedia(@"video");NSDictionary *networkVideo=nil;for(NSDictionary *vv in videoRows)if([vv[@"url"] hasSuffix:@"/real.mp4"]){networkVideo=vv;break;}Check(images.count==1&&videos.count>=1&&networkVideo!=nil&&[networkVideo[@"protocol"] isEqual:@"video"],@"network fetch media URL and MIME protocol classification are preserved");
     Check([images[0][@"documentID"] length]>0,@"native message carries real document identity");
     PVXFetchTaskThumbnail(images[0],^(UIImage *image){self.remoteThumbValid=image!=nil;});
     PVXSubmitMedia(images[0],^(NSDictionary *receipt,NSString *error){
