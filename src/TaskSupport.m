@@ -138,6 +138,10 @@ NSString *PVXTaskLocalPath(NSDictionary *task) {
     return nil;
 }
 BOOL PVXTaskHasLocalFile(NSDictionary *task) { id prepared=objc_getAssociatedObject(task,&PVXResolvedFileKey);if(prepared)return [prepared isKindOfClass:NSString.class];if([task[@"hasLocalFile"] isKindOfClass:NSNumber.class])return [task[@"hasLocalFile"] boolValue];return PVXTaskLocalPath(task)!=nil; }
+#if defined(PVX_FOUNDATION_TEST)
+BOOL PVXAutoSavePhotos(void) { return NO; }
+void PVXSetAutoSavePhotos(BOOL enabled) { (void)enabled; }
+#endif
 
 #if !defined(PVX_FOUNDATION_TEST)
 static long long PVXBytes(id v) { return [v isKindOfClass:NSNumber.class] ? MAX(0, [v longLongValue]) : 0; }
