@@ -149,7 +149,7 @@ static long long PVXBytes(id v) { return [v isKindOfClass:NSNumber.class] ? MAX(
 
 static NSMutableDictionary *PVXPublicRow(NSDictionary *raw, NSString *kind) {
     NSMutableDictionary *row = [NSMutableDictionary dictionary];
-    for (NSString *key in @[@"id", @"state", @"title", @"error", @"uti", @"extension"]) {
+    for (NSString *key in @[@"id", @"state", @"title", @"error", @"uti", @"extension", @"url", @"page", @"frame", @"poster", @"protocol", @"mime", @"sourceKind", @"width", @"height"]) {
         NSString *v = PVXSafeText(raw[key], [key isEqual:@"title"] ? 180 : 160);
         if (v.length) row[key] = v;
     }
@@ -201,9 +201,10 @@ static NSArray<NSDictionary *> *PVXScanVideoTasks(void) {
     for (NSMutableDictionary *row in rows.allValues) {
         if ([row[@"state"] isEqual:@"deleted"]) continue;
         NSDictionary *m = PVXMetadata(row[@"id"]);
-        for (NSString *field in @[@"title", @"tags", @"folder"]) {
-            if ([m[field] isKindOfClass:NSString.class]) row[field] = PVXSafeText(m[field], 180);
+        for (NSString *field in @[@"title", @"tags", @"folder", @"url", @"page", @"frame", @"poster", @"protocol", @"mime", @"sourceKind"]) {
+            if ([m[field] isKindOfClass:NSString.class]) row[field] = PVXSafeText(m[field], 16384);
         }
+        for (NSString *field in @[@"width", @"height"]) if ([m[field] isKindOfClass:NSNumber.class]) row[field]=m[field];
         NSString *localPath=PVXTaskLocalPath(row);BOOL local=localPath!=nil;
         objc_setAssociatedObject(row,&PVXResolvedFileKey,localPath?:NSNull.null,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         row[@"hasLocalFile"] = @(local);

@@ -61,6 +61,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (nullable PVXHLSVariant *)bestVariant;
 - (nullable PVXHLSEntry *)defaultAudioForGroup:(NSString *)groupID;
 - (NSString *)localizedTextWithSegmentURLs:(NSDictionary<NSString *,NSString *> *)localURLs;
+- (NSString *)localizedTextWithSegments:(NSArray<PVXHLSSegment *> *)segments localURLs:(NSDictionary<NSString *,NSString *> *)localURLs;
 @end
 
 NS_ASSUME_NONNULL_END
