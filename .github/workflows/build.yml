@@ -6,12 +6,17 @@ permissions:
   contents: read
 jobs:
   build:
-    runs-on: macos-13
+    runs-on: macos-15
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Test original and enhanced collectors
         run: node tests/collector.cjs
+      - name: Test HLS manifest parser and local playlist reconstruction
+        run: |
+          SDK="$(xcrun --sdk macosx --show-sdk-path)"
+          xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -I storage tests/hls-manifest-test.m storage/PVXHLSManifest.m -framework Foundation -o "$RUNNER_TEMP/pvx-hls-test"
+          "$RUNNER_TEMP/pvx-hls-test"
       - name: Build true arm64e using Apple compiler and linker
         run: python3 build-macos.py
       - name: Test storage hooks and disk retention
