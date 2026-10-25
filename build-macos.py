@@ -12,9 +12,9 @@ flags=['xcrun','--sdk','iphoneos','clang','-arch','arm64e','-miphoneos-version-m
 frameworks=['Foundation','UIKit','WebKit','AVFoundation','AVFAudio','AVKit','Photos','ImageIO','CoreGraphics','CoreMedia','QuartzCore','UniformTypeIdentifiers']
 fw=[]
 for f in frameworks:fw+=['-framework',f]
-run(flags+['-dynamiclib','-Wl,-install_name,@loader_path/PyVideoPlus.dylib','-o',B/'PyVideoPlus.dylib']+[P/'src'/(n+'.m') for n in ['Main','Images','Menus','Player','DownloadsUI','TaskSupport','PiPInline','Collection','MediaPreview','MediaQuality']]+fw)
+run(flags+['-dynamiclib','-Wl,-install_name,@loader_path/PyVideoPlus.dylib','-o',B/'PyVideoPlus.dylib']+[P/'src'/(n+'.m') for n in ['Main','Images','Menus','Player','DownloadsUI','TaskSupport','PiPInline','Collection','MediaPreview','MediaQuality','MediaMetadata']]+fw)
 run(flags+['-o',B/'PyVideoPhotoWorker',P/'worker/main.m']+fw+['-framework','Photos','-framework','UniformTypeIdentifiers'])
-run(flags+['-dynamiclib','-Wl,-install_name,@executable_path/PyVideoStorage.dylib','-o',B/'PyVideoStorage.dylib',P/'storage/Storage.m','-framework','Foundation','-framework','AVFoundation'])
+run(flags+['-dynamiclib','-Wl,-install_name,@executable_path/PyVideoStorage.dylib','-Wl,-rpath,@executable_path/Frameworks','-Wl,-rpath,@loader_path/../Frameworks','-o',B/'PyVideoStorage.dylib',P/'storage/Storage.m','-framework','Foundation','-framework','AVFoundation'])
 info={}
 for name in ['PyVideoPlus.dylib','PyVideoPhotoWorker','PyVideoStorage.dylib']:
  p=B/name;data=p.read_bytes();magic,cpu,sub,typ=struct.unpack_from('<IIII',data)

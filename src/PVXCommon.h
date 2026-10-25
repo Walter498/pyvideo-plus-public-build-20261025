@@ -20,6 +20,7 @@ FOUNDATION_EXPORT NSString *PVXResourcePath(NSString *name);
 FOUNDATION_EXPORT UIViewController * _Nullable PVXPresenter(void);
 FOUNDATION_EXPORT void PVXAlert(NSString *title, NSString *message);
 FOUNDATION_EXPORT NSDictionary * _Nullable PVXActiveVideo(void);
+FOUNDATION_EXPORT void PVXExportActiveRuntime(void(^ _Nullable completion)(BOOL started));
 FOUNDATION_EXPORT void PVXShowImages(void);
 FOUNDATION_EXPORT void PVXShowDownloads(void);
 FOUNDATION_EXPORT void PVXPreviewMedia(NSDictionary *row);
@@ -53,4 +54,5 @@ FOUNDATION_EXPORT void PVXDeleteTasks(NSArray<NSDictionary*> *tasks, void(^compl
 FOUNDATION_EXPORT void PVXRememberSource(NSDictionary *candidate, NSDictionary *receipt);
 FOUNDATION_EXPORT NSDictionary * _Nullable PVXLinkedTask(NSDictionary *candidate, NSArray<NSDictionary*> *tasks);
 FOUNDATION_EXPORT void PVXFetchMediaQuality(NSDictionary *row, void(^done)(NSString *quality));
+FOUNDATION_EXPORT void PVXFetchMediaMetadata(NSDictionary *row, void(^done)(NSDictionary *metadata));
 NS_ASSUME_NONNULL_END
