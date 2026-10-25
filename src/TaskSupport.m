@@ -227,19 +227,14 @@ static BOOL PVXSnapshotRunning;
 static void PVXSnapshotSetup(void){static dispatch_once_t once;dispatch_once(&once,^{PVXSnapshotQueue=dispatch_queue_create("com.crctdd.pyvideo.plus.task-snapshot",DISPATCH_QUEUE_SERIAL);PVXSnapshotLock=[NSLock new];PVXSnapshotRows=@[];PVXSnapshotStorage=@{};PVXSnapshotCallbacks=[NSMutableArray array];});}
 NSDictionary *PVXStorageSummary(void);
 void PVXRequestTaskSnapshot(void(^completion)(NSArray<NSDictionary*>*,NSDictionary*)) {
-    PVXSnapshotSetup();[PVXSnapshotLock lock];
-    if(completion)[PVXSnapshotCallbacks addObject:[completion copy]];
-    if(PVXSnapshotRunning){[PVXSnapshotLock unlock];return;}
-    PVXSnapshotRunning=YES;[PVXSnapshotLock unlock];
-    dispatch_async(PVXSnapshotQueue,^{@autoreleasepool{
-        NSArray *rows=PVXScanVideoTasks();static NSTimeInterval lastStorage;
-        NSTimeInterval now=NSDate.date.timeIntervalSince1970;
-        NSDictionary *storage=PVXSnapshotStorage;
-        if(!storage.count||now-lastStorage>=15){storage=PVXStorageSummary();lastStorage=now;}
-        [PVXSnapshotLock lock];PVXSnapshotRows=rows;PVXSnapshotStorage=storage;
-        NSArray *callbacks=[PVXSnapshotCallbacks copy];[PVXSnapshotCallbacks removeAllObjects];PVXSnapshotRunning=NO;[PVXSnapshotLock unlock];
-        dispatch_async(dispatch_get_main_queue(),^{for(void(^block)(NSArray*,NSDictionary*) in callbacks)block(rows,storage);});
-    }});
+ PVXSnapshotSetup();[PVXSnapshotLock lock];if(completion)[PVXSnapshotCallbacks addObject:[completion copy]];if(PVXSnapshotRunning){[PVXSnapshotLock unlock];return;}PVXSnapshotRunning=YES;[PVXSnapshotLock unlock];
+ dispatch_async(PVXSnapshotQueue,^{@autoreleasepool{
+  NSArray *rows=PVXScanVideoTasks();static NSTimeInterval lastStorage;NSTimeInterval now=NSDate.date.timeIntervalSince1970;NSDictionary *cached=PVXSnapshotStorage?:@{};BOOL refreshStorage=!cached.count||now-lastStorage>=15;
+  [PVXSnapshotLock lock];PVXSnapshotRows=rows;NSArray *first=[PVXSnapshotCallbacks copy];[PVXSnapshotCallbacks removeAllObjects];[PVXSnapshotLock unlock];
+  dispatch_async(dispatch_get_main_queue(),^{for(void(^block)(NSArray*,NSDictionary*) in first)block(rows,cached);});
+  if(refreshStorage){NSDictionary *storage=PVXStorageSummary();lastStorage=NSDate.date.timeIntervalSince1970;[PVXSnapshotLock lock];PVXSnapshotStorage=storage;NSArray *second=[PVXSnapshotCallbacks copy];[PVXSnapshotCallbacks removeAllObjects];PVXSnapshotRunning=NO;[PVXSnapshotLock unlock];dispatch_async(dispatch_get_main_queue(),^{for(void(^block)(NSArray*,NSDictionary*) in second)block(rows,storage);});}
+  else{[PVXSnapshotLock lock];PVXSnapshotRunning=NO;NSArray *late=[PVXSnapshotCallbacks copy];[PVXSnapshotCallbacks removeAllObjects];[PVXSnapshotLock unlock];dispatch_async(dispatch_get_main_queue(),^{for(void(^block)(NSArray*,NSDictionary*) in late)block(rows,cached);});}
+ }});
 }
 NSArray<NSDictionary*> *PVXReadVideoTasks(void) {
 #if defined(PVX_TEST)
@@ -517,7 +512,7 @@ void PVXApplyAutoSavePreferences(NSArray<NSDictionary*> *tasks){
     BOOL photos=[NSUserDefaults.standardUserDefaults boolForKey:@"com.crctdd.pyvideo.plus.autoPhotos"],files=[NSUserDefaults.standardUserDefaults boolForKey:@"com.crctdd.pyvideo.plus.autoFiles"];if(!photos&&!files)return;
     NSArray *copy=[tasks copy];dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{for(NSDictionary *task in copy){if(!PVXComplete(task)||!PVXTaskLocalPath(task)||!PVXUUID(task[@"id"]))continue;NSMutableDictionary*m=[PVXMetadata(task[@"id"]) mutableCopy];m[@"id"]=task[@"id"];if(photos&&! [m[@"autoPhotos"] boolValue]){m[@"autoPhotos"]=@YES;PVXAtomic(m,PVXMetadataPath(task[@"id"]),NULL);PVXSaveTaskToPhotos(task);}if(files&&! [m[@"autoFiles"] boolValue]){m[@"autoFiles"]=@YES;PVXAtomic(m,PVXMetadataPath(task[@"id"]),NULL);PVXSaveTaskToFiles(task);}}});
 }
-NSInteger PVXParallelLimit(void){NSInteger n=[NSUserDefaults.standardUserDefaults integerForKey:@"com.crctdd.pyvideo.plus.parallelDownloads"];return n>=1&&n<=15?n:5;}
+NSInteger PVXParallelLimit(void){NSInteger n=[NSUserDefaults.standardUserDefaults integerForKey:@"com.crctdd.pyvideo.plus.parallelDownloads"];return n>=1&&n<=15?n:15;}
 void PVXSetParallelLimit(NSInteger limit){NSInteger n=MIN(15,MAX(1,limit));[NSUserDefaults.standardUserDefaults setInteger:n forKey:@"com.crctdd.pyvideo.plus.parallelDownloads"];NSDictionary *value=@{@"parallelDownloads":@(n)};PVXAtomic(value,PVXPath(@"plus-preferences.plist"),NULL);}
 void PVXCreateDownloadFolder(NSString *name,void(^completion)(BOOL,NSString*)){NSString *safe=PVXSafeText(name,80);BOOL valid=safe.length&&[safe rangeOfCharacterFromSet:[NSCharacterSet characterSetWithCharactersInString:@"/\\:"]].location==NSNotFound;dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{NSString *root=PVXRoot();NSError *error=nil;BOOL ok=valid&&root&&[NSFileManager.defaultManager createDirectoryAtPath:[root stringByAppendingPathComponent:[NSString stringWithFormat:@"files/%@",safe]] withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0700} error:&error];dispatch_async(dispatch_get_main_queue(),^{if(completion)completion(ok,error.localizedDescription);});});}
 NSDictionary *PVXTaskPresentation(NSDictionary *task) {

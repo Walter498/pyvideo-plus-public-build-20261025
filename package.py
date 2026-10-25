@@ -45,13 +45,16 @@ for framework in ['ffmpegkit','libavdevice','libavcodec','libavfilter','libavfor
  info=FFMPEG_ROOT/(framework+'.framework')/'Info.plist'
  if info.is_file():place(info,'Applications/PyVideoAgent.app/Frameworks/'+framework+'.framework/Info.plist',0o644)
  subprocess.run(['ldid','-S',str(STAGE/target)],check=True)
-# Add only one load command in known zero header padding; preserve every code byte.
+# Add storage load command and Frameworks RPATH in known zero header padding.
 agent=STAGE/'Applications/PyVideoAgent.app/PyVideoAgent'
 originalAgent=agent.read_bytes();data=bytearray(originalAgent);n,sz=struct.unpack_from('<II',data,16)
-name=b'@executable_path/PyVideoStorage.dylib\0';cmdsize=(24+len(name)+7)&~7
-assert data[32+sz:32+sz+cmdsize]==bytes(cmdsize)
-cmd=struct.pack('<IIIIII',0xc,cmdsize,24,0,0,0)+name;cmd+=bytes(cmdsize-len(cmd))
-data[32+sz:32+sz+cmdsize]=cmd;struct.pack_into('<II',data,16,n+1,sz+cmdsize);assert data[0x4000:]==originalAgent[0x4000:]
+load_name=b'@executable_path/PyVideoStorage.dylib\0';load_size=(24+len(load_name)+7)&~7
+rpath_name=b'@executable_path/Frameworks\0';rpath_size=(12+len(rpath_name)+7)&~7
+base=32+sz;assert data[base:base+load_size+rpath_size]==bytes(load_size+rpath_size)
+load=struct.pack('<IIIIII',0xc,load_size,24,0,0,0)+load_name;load+=bytes(load_size-len(load))
+rpath=struct.pack('<III',0x8000001c,rpath_size,12)+rpath_name;rpath+=bytes(rpath_size-len(rpath))
+data[base:base+load_size]=load;data[base+load_size:base+load_size+rpath_size]=rpath
+struct.pack_into('<II',data,16,n+2,sz+load_size+rpath_size);assert data[0x4000:]==originalAgent[0x4000:]
 # The user explicitly forbids background Photos. Replace only the verified
 # exportReady entry with plain RET before PAC prologue; downloads/validation intact.
 assert data[0x197fac:0x197fb0]==bytes.fromhex('7f2303d5')
@@ -74,13 +77,13 @@ def signing_identifiers(binary):
   ident=struct.unpack_from('>I',b,p+20)[0];end=b.index(b'\0',p+ident);out.append(b[p+ident:end].decode())
  return out
 assert signing_identifiers(agent) and all(x=='com.crctdd.pyvideo' for x in signing_identifiers(agent)),signing_identifiers(agent)
-agentpatch={'path':'Applications/PyVideoAgent.app/PyVideoAgent','change':'Add storage LC_LOAD_DYLIB; verified exportReady entry VA0x100197fac/file0x197fac PACIBSP -> RET to hard-disable automatic Photos; all other original code bytes preserved; signing identifier com.crctdd.pyvideo retained','sha256':hashlib.sha256(agent.read_bytes()).hexdigest()}
+agentpatch={'path':'Applications/PyVideoAgent.app/PyVideoAgent','change':'Add storage LC_LOAD_DYLIB and @executable_path/Frameworks LC_RPATH; verified exportReady entry VA0x100197fac/file0x197fac PACIBSP -> RET to hard-disable automatic Photos; all other original code bytes preserved; signing identifier com.crctdd.pyvideo retained','sha256':hashlib.sha256(agent.read_bytes()).hexdigest()}
 
 addon={'Filter':{'Bundles':['com.apple.mobilesafari']}}
 (STAGE/'Library/MobileSubstrate/DynamicLibraries/PyVideoPlus.plist').write_bytes(plistlib.dumps(addon,fmt=plistlib.FMT_BINARY))
 job={'Label':'com.crctdd.pyvideo.photo-worker','ProgramArguments':['/Applications/PyVideoAgent.app/PyVideoPhotoWorker','--worker'],'UserName':'mobile','RunAtLoad':True,'KeepAlive':True,'ThrottleInterval':10,'ProcessType':'Background','JetsamProperties':{'JetsamMemoryLimit':192}}
 photo=STAGE/'Library/LaunchDaemons/com.crctdd.pyvideo.photo-worker.plist';photo.write_bytes(plistlib.dumps(job,fmt=plistlib.FMT_BINARY));photo.chmod(0o644)
-control=STAGE/'DEBIAN/control';raw=control.read_text();raw=raw.replace('Name: PyVideo\n','Name: Safari亚瑟下载\n').replace('Version: 0.0.3\n','Version: 1.0.3\n');start=raw.index('Description:');end=raw.index('Maintainer:',start);raw=raw[:start]+'''Description: 让Safari获得某些类似亚瑟浏览器的功能，能够在画中画中直接下载影片，或者在网站中采集图片及影片以下载，长按搜索栏或点击画中画中的菜单开始使用\n'''+raw[end:];raw=re.sub(r'^Author: .*$', 'Author: 水甲嫩鸡', raw, flags=re.M);raw=re.sub(r'^Maintainer: .*$', 'Maintainer: 水甲嫩鸡', raw, flags=re.M);raw+='Depiction: file:///Library/Application%20Support/PyVideo/depiction/index.html\n';control.write_text(raw)
+control=STAGE/'DEBIAN/control';raw=control.read_text();raw=raw.replace('Name: PyVideo\n','Name: Safari亚瑟下载\n').replace('Version: 0.0.3\n','Version: 1.0.4\n');start=raw.index('Description:');end=raw.index('Maintainer:',start);raw=raw[:start]+'''Description: 让Safari获得某些类似亚瑟浏览器的功能，能够在画中画中直接下载影片，或者在网站中采集图片及影片以下载，长按搜索栏或点击画中画中的菜单开始使用\n'''+raw[end:];raw=re.sub(r'^Author: .*$', 'Author: 水甲嫩鸡', raw, flags=re.M);raw=re.sub(r'^Maintainer: .*$', 'Maintainer: 水甲嫩鸡', raw, flags=re.M);raw+='Depiction: file:///Library/Application%20Support/PyVideo/depiction/index.html\n';control.write_text(raw)
 post=STAGE/'DEBIAN/postinst';text=post.read_text();assert text.endswith('exit 0\n');text=text[:-7]+'''pv_stage=photo-storage-permissions
 for pv_child in image-inbox image-tasks image-media; do
   if [ -d "$pv_data/$pv_child" ]; then
@@ -107,7 +110,7 @@ for original in (ORIG/'rootfs').rglob('*'):
   assert original.read_bytes()==(STAGE/rel).read_bytes(),rel
   unchanged.append(str(rel))
 for script in ['postinst','prerm','postrm']:subprocess.run(['sh','-n',str(STAGE/'DEBIAN'/script)],check=True)
-out=DIST/'Safari-Arthur-Downloads-1.0.3-full-media-hls-metadata-fix-iphoneos-arm64e.deb'
+out=DIST/'Safari-Arthur-Downloads-1.0.4-high-concurrency-hls-root-fix-iphoneos-arm64e.deb'
 # The iOS shared filesystem ignores chmod; archive modes must be explicit.
 modes={}
 for archive,prefix in [('data',''),('control','DEBIAN/')]:

@@ -177,10 +177,15 @@ static BOOL PVXLoadFFmpegKit(void){
  for(NSString *path in paths){FFmpegHandle=dlopen(path.fileSystemRepresentation,RTLD_NOW|RTLD_GLOBAL);if(FFmpegHandle)break;}
  FFmpegKitClass=NSClassFromString(@"FFmpegKit");return FFmpegHandle&&FFmpegKitClass;
 }
+static BOOL PVXWriteLocalHLSPlaylist(NSArray *rows,NSString *path,NSError **outError){
+ NSMutableString *playlist=[NSMutableString stringWithString:@"#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-INDEPENDENT-SEGMENTS\n"];
+ for(NSDictionary *row in rows){NSString *segment=row[@"path"];if(![segment isKindOfClass:NSString.class])continue;NSString *uri=[NSURL fileURLWithPath:segment].absoluteString;[playlist appendFormat:@"#EXTINF:10.000,\n%@\n",uri];}
+ [playlist appendString:@"#EXT-X-ENDLIST\n"];NSData *data=[playlist dataUsingEncoding:NSUTF8StringEncoding];if(!data||![data writeToFile:path options:NSDataWritingAtomic error:outError])return NO;chmod(path.fileSystemRepresentation,0600);return YES;
+}
 static BOOL PVXFFmpegRemux(NSString *input,NSString *output,NSError **outError){
- if(!PVXLoadFFmpegKit()){if(outError)*outError=[NSError errorWithDomain:@"PVXRecovery" code:10 userInfo:@{NSLocalizedDescriptionKey:@"FFmpegKit 未加载，已转入 AVFoundation"}];return NO;}
- SEL execute=NSSelectorFromString(@"executeWithArguments:");if(![FFmpegKitClass respondsToSelector:execute]){if(outError)*outError=[NSError errorWithDomain:@"PVXRecovery" code:11 userInfo:@{NSLocalizedDescriptionKey:@"FFmpegKit 接口不可用，已转入 AVFoundation"}];return NO;}
- NSArray *args=@[@"-hide_banner",@"-loglevel",@"error",@"-y",@"-f",@"mpegts",@"-i",input,@"-map",@"0:v:0?",@"-map",@"0:a?",@"-c",@"copy",@"-avoid_negative_ts",@"make_zero",@"-movflags",@"+faststart",output];
+ if(!PVXLoadFFmpegKit()){if(outError)*outError=[NSError errorWithDomain:@"PVXRecovery" code:10 userInfo:@{NSLocalizedDescriptionKey:@"FFmpegKit 未加载，恢复未执行"}];return NO;}
+ SEL execute=NSSelectorFromString(@"executeWithArguments:");if(![FFmpegKitClass respondsToSelector:execute]){if(outError)*outError=[NSError errorWithDomain:@"PVXRecovery" code:11 userInfo:@{NSLocalizedDescriptionKey:@"FFmpegKit 接口不可用"}];return NO;}
+ BOOL playlist=[input.pathExtension.lowercaseString isEqual:@"m3u8"];NSMutableArray *args=[NSMutableArray arrayWithObjects:@"-hide_banner",@"-loglevel",@"error",@"-y",nil];if(playlist){[args addObjectsFromArray:@[@"-protocol_whitelist",@"file,crypto,data",@"-allowed_extensions",@"ALL",@"-fflags",@"+genpts",@"-i",input]];}else{[args addObjectsFromArray:@[@"-f",@"mpegts",@"-i",input]];}[args addObjectsFromArray:@[@"-map",@"0:v:0?",@"-map",@"0:a:0?",@"-c",@"copy",@"-avoid_negative_ts",@"make_zero",@"-max_interleave_delta",@"0",@"-movflags",@"+faststart",output]];
  id session=((id(*)(id,SEL,id))objc_msgSend)(FFmpegKitClass,execute,args);SEL getRC=NSSelectorFromString(@"getReturnCode");id rc=[session respondsToSelector:getRC]?((id(*)(id,SEL))objc_msgSend)(session,getRC):nil;SEL success=NSSelectorFromString(@"isValueSuccess");BOOL ok=rc&&[rc respondsToSelector:success]&&((BOOL(*)(id,SEL))objc_msgSend)(rc,success);struct stat st;if(ok)ok=!lstat(output.fileSystemRepresentation,&st)&&S_ISREG(st.st_mode)&&st.st_size>0;if(!ok){NSString *detail=rc&&[rc respondsToSelector:NSSelectorFromString(@"description")]?[rc description]:@"FFmpegKit remux failed";if(outError)*outError=[NSError errorWithDomain:@"PVXRecovery" code:12 userInfo:@{NSLocalizedDescriptionKey:detail?:@"FFmpegKit remux failed"}];[[NSFileManager defaultManager] removeItemAtPath:output error:nil];}return ok;
 }
 static void PVXFinishRecovery(id agent,NSString*uuid,NSString*temp,BOOL success,NSError*error){
@@ -194,7 +199,7 @@ static void PVXStartAVFoundationExport(id agent,NSString*uuid,NSString*ts,NSInte
 static void PVXStartRecoveryExport(id agent,NSString*uuid,NSString*ts,NSInteger attempt){(void)attempt;
  NSString *temp=Path([NSString stringWithFormat:@"media/%@.recovery.mp4",uuid]);RecoveryExports[uuid]=@YES;dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{NSError *err=nil;BOOL ok=PVXFFmpegRemux(ts,temp,&err);NSString *detail=err.localizedDescription;dispatch_async(dispatch_get_main_queue(),^{if(ok){PVXFinishRecovery(agent,uuid,temp,YES,nil);return;}PVXStartAVFoundationExport(agent,uuid,ts,0,detail);});});
 }
-static void PVXRecoverFailedHLS(id agent,NSDictionary*task){NSString*uuid=task[@"id"];if(!ValidID(uuid))return;dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{NSArray*rows=PVXOrderedHLSFiles(uuid);if(rows.count<2)return;NSString*ts=Path([NSString stringWithFormat:@"media/%@.recovery.ts",uuid]);if(!PVXConcatHLS(rows,ts))return;dispatch_async(dispatch_get_main_queue(),^{if([RecoveryAttempted containsObject:uuid])return;[RecoveryAttempted addObject:uuid];PVXStartRecoveryExport(agent,uuid,ts,0);});});}
+static void PVXRecoverFailedHLS(id agent,NSDictionary*task){NSString*uuid=task[@"id"];if(!ValidID(uuid))return;dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{NSArray*rows=PVXOrderedHLSFiles(uuid);if(rows.count<2)return;NSString *playlist=Path([NSString stringWithFormat:@"media/%@.recovery.m3u8",uuid]);NSError *playlistError=nil;if(!PVXWriteLocalHLSPlaylist(rows,playlist,&playlistError))return;dispatch_async(dispatch_get_main_queue(),^{if([RecoveryAttempted containsObject:uuid])return;[RecoveryAttempted addObject:uuid];PVXStartRecoveryExport(agent,uuid,playlist,0);});});}
 static void PVXScanFailedHLS(id agent){for(NSDictionary*t in [[agent tasks] allValues]){NSString *error=[t[@"error"] isKindOfClass:NSString.class]?t[@"error"]:@"";if([t[@"state"] isEqual:@"failed"]&&([error containsString:@"HLS 封装失败"]||[error containsString:@"HLS恢复封装失败"]))PVXRecoverFailedHLS(agent,t);}}
 static void Tick(void) {
     id agent = Worker;
@@ -281,7 +286,7 @@ static void Delete(id self, SEL cmd, id uuid) {
     }
 }
 
-static NSInteger PVXConfiguredParallel(void){NSDictionary *v=[NSDictionary dictionaryWithContentsOfFile:Path(@"plus-preferences.plist")];NSInteger n=[v[@"parallelDownloads"] integerValue];return n>=1&&n<=15?n:5;}
+static NSInteger PVXConfiguredParallel(void){NSDictionary *v=[NSDictionary dictionaryWithContentsOfFile:Path(@"plus-preferences.plist")];NSInteger n=[v[@"parallelDownloads"] integerValue];return n>=1&&n<=15?n:15;}
 static void PVXPumpWithConfiguredLimit(id self, SEL cmd){
     OldPump(self,cmd);
     if(![self workerMode]||![self reconciled]||![self memoryReady])return;
