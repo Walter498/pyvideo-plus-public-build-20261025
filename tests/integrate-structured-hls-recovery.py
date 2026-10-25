@@ -1,0 +1,21 @@
+from pathlib import Path
+p=Path('/var/minis/workspace/pyvideo-plus/storage/Storage.m');s=p.read_text()
+s=s.replace('#import <AVFoundation/AVFoundation.h>','#import <AVFoundation/AVFoundation.h>\n#import "PVXHLSManifest.h"',1)
+a=s.index('static BOOL PVXWriteLocalHLSPlaylist(')
+b=s.index('static BOOL PVXFFmpegRemux(',a)
+new=r'''static BOOL PVXBuildLocalHLSPlaylist(NSString *uuid,NSString *output,NSError **outError){
+ NSString *dir=Path([NSString stringWithFormat:@"media/%@.hls",uuid]);NSArray *names=[[NSFileManager defaultManager] contentsOfDirectoryAtPath:dir error:nil];PVXHLSManifest *best=nil;NSString *sourcePath=nil;NSUInteger bestCount=0;
+ for(NSString *name in names){NSString *ext=name.pathExtension.lowercaseString;if(!([ext isEqual:@"m3u8"]||[ext isEqual:@"txt"]||[name.lowercaseString containsString:@"playlist"]))continue;NSString *path=[dir stringByAppendingPathComponent:name];NSData *data=[NSData dataWithContentsOfFile:path options:NSDataReadingMappedIfSafe error:nil];if(data.length>2*1024*1024)continue;NSError *e=nil;PVXHLSManifest *m=[PVXHLSManifest parseData:data baseURL:[NSURL fileURLWithPath:path] error:&e];if(m&&!m.master&&m.segments.count>bestCount){best=m;sourcePath=path;bestCount=m.segments.count;}}
+ if(!best){if(outError)*outError=[NSError errorWithDomain:@"PVXRecovery" code:20 userInfo:@{NSLocalizedDescriptionKey:@"HLS 缺少可解析的 media playlist（需要真实 EXTINF/时长）"}];return NO;}
+ NSArray *rows=PVXOrderedHLSFiles(uuid);NSMutableDictionary *local=[NSMutableDictionary dictionary];for(NSDictionary *row in rows){NSString *remote=row[@"url"],*file=row[@"path"];if(remote.length&&file.length){NSString *u=[NSURL fileURLWithPath:file].absoluteString;local[remote]=u;local[remote.lowercaseString]=u;}}
+ NSMutableDictionary *pathMap=[NSMutableDictionary dictionary];for(NSDictionary *row in rows){NSURL *u=[NSURL URLWithString:row[@"url"]];if(u.path.lastPathComponent.length)pathMap[u.path.lastPathComponent]=[NSURL fileURLWithPath:row[@"path"]].absoluteString;}
+ for(PVXHLSSegment *segment in best.segments){if(segment.discontinuity||segment.gap){if(outError)*outError=[NSError errorWithDomain:@"PVXRecovery" code:21 userInfo:@{NSLocalizedDescriptionKey:@"HLS 包含 DISCONTINUITY/GAP，未伪造时间线"}];return NO;}if(!local[segment.URI]){NSURL *u=[NSURL URLWithString:segment.URI];NSString *mapped=pathMap[u.path.lastPathComponent];if(mapped)local[segment.URI]=mapped;}if(!local[segment.URI]){if(outError)*outError=[NSError errorWithDomain:@"PVXRecovery" code:22 userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"HLS 分片未找到本地缓存：%@",u.path.lastPathComponent?:segment.URI]}];return NO;}if(segment.key.URI.length&&!local[segment.key.URI]){if(outError)*outError=[NSError errorWithDomain:@"PVXRecovery" code:23 userInfo:@{NSLocalizedDescriptionKey:@"HLS KEY 未找到本地缓存"}];return NO;}if(segment.map.URI.length&&!local[segment.map.URI]){if(outError)*outError=[NSError errorWithDomain:@"PVXRecovery" code:24 userInfo:@{NSLocalizedDescriptionKey:@"HLS MAP 初始化段未找到本地缓存"}];return NO;}}
+ NSString *text=[best localizedTextWithSegmentURLs:local];NSData *out=[text dataUsingEncoding:NSUTF8StringEncoding];if(![out writeToFile:output options:NSDataWritingAtomic error:outError])return NO;chmod(output.fileSystemRepresentation,0600);return YES;
+}
+'''
+s=s[:a]+new+s[b:]
+a=s.index('static void PVXRecoverFailedHLS(');b=s.index('static void PVXScanFailedHLS',a)
+new=r'''static void PVXRecoverFailedHLS(id agent,NSDictionary*task){NSString*uuid=task[@"id"];if(!ValidID(uuid))return;dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{NSString *playlist=Path([NSString stringWithFormat:@"media/%@.recovery.m3u8",uuid]);NSError *playlistError=nil;if(!PVXBuildLocalHLSPlaylist(uuid,playlist,&playlistError)){dispatch_async(dispatch_get_main_queue(),^{NSMutableDictionary *t=[[[agent tasks] objectForKey:uuid] mutableCopy];if(t){t[@"error"]=[NSString stringWithFormat:@"HLS 封装失败（清单重建）：%@",playlistError.localizedDescription?:@"无法重建本地清单"];if(Persist)Persist(agent,@selector(persist:),t);Notify(Signal);}});return;}dispatch_async(dispatch_get_main_queue(),^{if([RecoveryAttempted containsObject:uuid])return;[RecoveryAttempted addObject:uuid];PVXStartRecoveryExport(agent,uuid,playlist,0);});});}
+'''
+s=s[:a]+new+s[b:]
+p.write_text(s)

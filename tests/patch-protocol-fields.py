@@ -1,0 +1,5 @@
+from pathlib import Path
+p=Path('/var/minis/workspace/pyvideo-plus/src/Images.m');s=p.read_text()
+old='''[videos addObject:@{@"kind":@"video",@"url":row[@"url"],@"sources":sources,@"height":row[@"height"]?:@0,@"title":PVXString(row[@"title"],180)?row[@"title"]:@"影片",@"poster":PVXImageURL(row[@"poster"])?row[@"poster"]:@"",@"page":m[@"page"],@"frame":m[@"page"],@"documentID":m[@"documentID"],@"key":[NSString stringWithFormat:@"%@|video|%@",m[@"documentID"],row[@"url"]]}];'''
+new='''[videos addObject:@{@"kind":@"video",@"url":row[@"url"],@"sources":sources,@"height":row[@"height"]?:@0,@"protocol":row[@"protocol"]?:@"http",@"mime":row[@"mime"]?:@"",@"sourceKind":row[@"sourceKind"]?:@"network",@"title":PVXString(row[@"title"],180)?row[@"title"]:@"影片",@"poster":PVXImageURL(row[@"poster"])?row[@"poster"]:@"",@"page":m[@"page"],@"frame":m[@"page"],@"documentID":m[@"documentID"],@"key":[NSString stringWithFormat:@"%@|video|%@",m[@"documentID"],row[@"url"]]}];'''
+assert old in s;s=s.replace(old,new,1);p.write_text(s)
