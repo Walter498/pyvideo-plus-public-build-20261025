@@ -1,0 +1,4 @@
+from pathlib import Path
+p=Path('/var/minis/workspace/pyvideo-plus/storage/PVXHLSManifest.m');s=p.read_text();old='if(seg.key.URI.length)[out appendFormat:@"#EXT-X-KEY:METHOD=%@,URI=\\\"%@\\\"%@%@\\n",seg.key.method,localURLs[seg.key.URI]?:seg.key.URI,seg.key.IV.length?[NSString stringWithFormat:@",IV=%@",seg.key.IV]:@"",seg.key.keyformat.length?[NSString stringWithFormat:@",KEYFORMAT=\\\"%@\\\"",seg.key.keyformat]:@""];'
+new='if(seg.key.method.length){if([seg.key.method.uppercaseString isEqual:@"NONE"])[out appendString:@"#EXT-X-KEY:METHOD=NONE\\n"];else [out appendFormat:@"#EXT-X-KEY:METHOD=%@,URI=\\\"%@\\\"%@%@\\n",seg.key.method,localURLs[seg.key.URI]?:seg.key.URI,seg.key.IV.length?[NSString stringWithFormat:@",IV=%@",seg.key.IV]:@"",seg.key.keyformat.length?[NSString stringWithFormat:@",KEYFORMAT=\\\"%@\\\"",seg.key.keyformat]:@""];}'
+assert old in s;p.write_text(s.replace(old,new))
