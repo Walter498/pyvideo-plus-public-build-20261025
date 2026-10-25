@@ -12,9 +12,9 @@ def run(args):
 (B/'build.log').write_text('')
 common=['clang','-target','arm64e-apple-ios15.0','-isysroot',SDK,'-F'+str(SDK/'System/Library/SubFrameworks'),'-fobjc-arc','-fblocks','-Os','-Wall','-Wextra','-Wno-unused-parameter','-Wno-deprecated-declarations','-I',P/'src']
 objects=[]
-for name in ['Main','Images','Menus','Player']:
+for name in ['Main','Images','Menus','Player','DownloadsUI','TaskSupport','PiPInline','Collection','MediaPreview','MediaQuality','MediaMetadata','PVXMediaResource']:
  out=B/(name+'.o');run(common+['-c',P/'src'/(name+'.m'),'-o',out]);objects.append(out)
-frameworks=['Foundation','UIKit','WebKit','AVFoundation','AVKit','ImageIO','CoreGraphics']
+frameworks=['Foundation','UIKit','WebKit','AVFoundation','AVKit','AVFAudio','Photos','ImageIO','CoreGraphics','CoreMedia','QuartzCore','UniformTypeIdentifiers']
 link=['ld64.lld','-arch','arm64e','-platform_version','ios','15.0','16.5','-syslibroot',SDK,'-L'+str(SDK/'usr/lib'),'-F'+str(SDK/'System/Library/Frameworks'),'-lSystem','-lobjc']
 for f in frameworks:link+=['-framework',f]
 run(link+['-dylib','-install_name','@loader_path/PyVideoPlus.dylib','-o',B/'PyVideoPlus.dylib']+objects)

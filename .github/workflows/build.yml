@@ -12,9 +12,13 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test original and enhanced collectors
         run: node tests/collector.cjs
-      - name: Test HLS manifest parser and local playlist reconstruction
+      - name: Run local HTTP, ImageIO and real FFmpeg media smoke tests
         run: |
-          SDK="$(xcrun --sdk macosx --show-sdk-path)"
+          if ! command -v ffmpeg >/dev/null 2>&1; then brew install ffmpeg; fi
+          python3 tests/media-pipeline-local.py
+          python3 tests/media-metadata-regression.py
+      - name: Test HLS manifest parser
+        run: |
           xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -I storage tests/hls-manifest-test.m storage/PVXHLSManifest.m -framework Foundation -o "$RUNNER_TEMP/pvx-hls-test"
           "$RUNNER_TEMP/pvx-hls-test"
       - name: Build true arm64e using Apple compiler and linker

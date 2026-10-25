@@ -1,4 +1,5 @@
 #import "PVXCommon.h"
+#import "PVXMediaResource.h"
 #import <AVFoundation/AVFoundation.h>
 #import <AVKit/AVKit.h>
 #import <ImageIO/ImageIO.h>
@@ -9,7 +10,7 @@ extern void PVXValidateCollected(WKWebView *web, NSDictionary *row, void(^done)(
 @interface PVXPreviewNetwork : NSObject <NSURLSessionDownloadDelegate>
 @end
 @implementation PVXPreviewNetwork
-- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task willPerformHTTPRedirection:(NSHTTPURLResponse *)response newRequest:(NSURLRequest *)request completionHandler:(void (^)(NSURLRequest *))completionHandler {(void)session;(void)task;(void)response;(void)request;completionHandler(nil);}
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task willPerformHTTPRedirection:(NSHTTPURLResponse *)response newRequest:(NSURLRequest *)request completionHandler:(void (^)(NSURLRequest *))completionHandler {(void)session;(void)task;(void)response;completionHandler(request);}
 - (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)task didWriteData:(int64_t)bytes totalBytesWritten:(int64_t)total totalBytesExpectedToWrite:(int64_t)expected {(void)session;(void)bytes;if(total>100*1024*1024||expected>100*1024*1024)[task cancel];}
 - (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)task didFinishDownloadingToURL:(NSURL *)location {(void)session;(void)task;(void)location;}
 @end
