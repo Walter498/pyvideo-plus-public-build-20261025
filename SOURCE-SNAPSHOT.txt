@@ -1,0 +1,15 @@
+8fbb51d6db3965ca68949ad6fe4e4497919df864
+
+This bundle is a working-tree source snapshot. It includes uncommitted post-commit fixes in:
+- src/MediaMetadata.m
+- src/PVXMediaResource.h
+- src/PVXMediaResource.m
+- src/MediaPreview.m
+- build.py
+- build-macos.py
+- package.py
+- .github/workflows/build.yml
+- tests/media-metadata-regression.py
+- tests/media-pipeline-local.py
+
+Device evidence, historical deb files, build outputs, package staging, and dist artifacts are intentionally excluded.
