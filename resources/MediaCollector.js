@@ -45,7 +45,7 @@ function scan(force=false){
  if(v&&v.isConnected!==false&&(Date.now()-chosenAt<30000||v.webkitDisplayingFullscreen||v.webkitPresentationMode==='picture-in-picture'||document.pictureInPictureElement===v)){
  const source= http(v.currentSrc)||http(v.getAttribute('src'))||[...v.querySelectorAll('source')].map(s=>http(s.src||s.getAttribute('src'))).find(Boolean)||'';
   const rawCurrent=String(v.currentSrc||v.src||'');
-  const sourceCandidates=[...networkSources.values()].filter(x=>x.page===location.href&&x.protocol&&x.url!==location.href).sort((a,b)=>(b.at||0)-(a.at||0)).slice(0,32).map(x=>({url:x.url,protocol:x.protocol,mime:x.mime||'',at:x.at||0}));
+  const sourceCandidates=[...networkSources.values()].filter(x=>x.page===location.href&&x.protocol&&x.url!==location.href).sort((a,b)=>{const rank=x=>x.protocol==='hls'||x.protocol==='dash'?0:x.protocol==='video'?1:2;return rank(a)-rank(b)||(b.at||0)-(a.at||0);}).slice(0,32).map(x=>({url:x.url,protocol:x.protocol,mime:x.mime||'',at:x.at||0}));
   active={url:source,blob:rawCurrent.startsWith('blob:'),blobURL:rawCurrent.startsWith('blob:')?rawCurrent:'',sourceCandidates,title:String(v.title||document.title||'当前播放视频').slice(0,180),at:chosenAt,fullscreen:!!v.webkitDisplayingFullscreen,pip:v.webkitPresentationMode==='picture-in-picture'||document.pictureInPictureElement===v};
  }
  const message={version:1,documentID:docID,page:location.href.slice(0,16384),images:[...found.values()],videos:[...videos.values()],runtime,active};lastSnapshot=message;

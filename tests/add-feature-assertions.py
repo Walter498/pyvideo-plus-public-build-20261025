@@ -1,0 +1,4 @@
+from pathlib import Path
+p=Path('/var/minis/workspace/pyvideo-plus/tests/webkit-beta3-ui.m');s=p.read_text();needle='Check(CGRectGetMaxY(m.mediaTabs.frame)<=CGRectGetMinY(m.sectionLabel.frame)&&CGRectGetMaxY(m.feedback.frame)<=CGRectGetMinY(m.table.frame),@"filter and table layout do not overlap");'
+insert=needle+'Check(m.sortButton.menu.children.count==5,@"download and collect pages expose five-option native sort menu");Check(m.moreButton.menu.children.count==4,@"top-right native 3D menu exposes creation display batch and settings groups");Check([m tableView:m.table trailingSwipeActionsConfigurationForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]].performsFirstActionWithFullSwipe,@"list rows expose full-swipe delete");[m setGridMode:YES];Check(m.grid.hidden==NO&&m.table.hidden==YES,@"native icon mode switches to two-column collection view");[m setGridMode:NO];'
+assert needle in s;s=s.replace(needle,insert,1);p.write_text(s)
