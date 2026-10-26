@@ -140,6 +140,7 @@ static NSMutableDictionary *RecoveryExports;
 static void *FFmpegHandle;
 static Class FFmpegKitClass;
 static NSString *FFmpegLoadError;
+static void PVXBootLog(NSString *message){fprintf(stderr,"PyVideoStorage: %s\\n",message.UTF8String?:"(null)");fflush(stderr);}
 static __weak id Worker;
 static dispatch_source_t Timer;
 static int NotificationToken;
@@ -353,7 +354,8 @@ static BOOL KnownImage(void) {
 __attribute__((constructor))
 static void Install(void) {
     @autoreleasepool {
-        if (![NSProcessInfo.processInfo.arguments.firstObject.lastPathComponent isEqual:@"PyVideoAgent"] || !KnownImage()) return;
+        PVXBootLog(@"constructor-enter");
+        if (![NSProcessInfo.processInfo.arguments.firstObject.lastPathComponent isEqual:@"PyVideoAgent"] || !KnownImage()) { PVXBootLog(@"gate-process-or-uuid-failed"); return; }
         Class c = NSClassFromString(@"PVAgent");
         const char *finishArgs[] = {"@", "B", "@", "@"};
         const char *one[] = {"@"};
@@ -374,7 +376,8 @@ static void Install(void) {
             !Signature(c, NSSelectorFromString(@"finishExport:success:error:assetID:"), "v", 4, finishArgs) ||
             !Signature(c, NSSelectorFromString(@"finishDeletion:"), "v", 1, one) ||
             !Signature(c, NSSelectorFromString(@"finishClearAll"), "v", 0, NULL) ||
-            !Signature(NSFileManager.class, @selector(removeItemAtPath:error:), "B", 2, removeArgs)) return;
+            !Signature(NSFileManager.class, @selector(removeItemAtPath:error:), "B", 2, removeArgs)) { PVXBootLog(@"gate-agent-abi-failed"); return; }
+        PVXBootLog(@"gate-agent-abi-ok");
         RecoveryAttempted=[NSMutableSet set];RecoveryExports=[NSMutableDictionary dictionary];
         Persist=(void *)class_getMethodImplementation(c,@selector(persist:));
         Hook = (void *)dlsym(RTLD_DEFAULT, "MSHookMessageEx");
@@ -390,14 +393,16 @@ static void Install(void) {
         Media = (void *)dlsym(RTLD_DEFAULT, "PVMediaPath");
         Write = (void *)dlsym(RTLD_DEFAULT, "PVWrite");
         Notify = (void *)dlsym(RTLD_DEFAULT, "PVNotify");
-        if (!Hook || !Root || !Media || !Write || !Notify) return;
+        if (!Hook || !Root || !Media || !Write || !Notify) { PVXBootLog(@"gate-symbol-lookup-failed"); return; }
+        PVXBootLog(@"gate-symbol-lookup-ok");
         // Require the original C entrypoints to belong to the executable image.
         void *symbols[] = {(void *)Root, (void *)Media, (void *)Write, (void *)Notify};
         for (unsigned i = 0; i < sizeof(symbols)/sizeof(symbols[0]); i++) {
             Dl_info info;
-            if (!dladdr(symbols[i], &info) || info.dli_fbase != (void *)_dyld_get_image_header(0)) return;
+            if (!dladdr(symbols[i], &info) || info.dli_fbase != (void *)_dyld_get_image_header(0)) { PVXBootLog(@"gate-symbol-owner-failed"); return; }
         }
-        if (!SafeDirectory(Root())) return;
+        if (!SafeDirectory(Root())) { PVXBootLog(@"gate-root-directory-failed"); return; }
+        PVXBootLog(@"gate-root-directory-ok");
         Hook(c, @selector(tasks), (IMP)TasksView, (IMP *)&OldTasks);
         Hook(c, @selector(pump), (IMP)PVXPumpWithConfiguredLimit, (IMP *)&OldPump);
         Hook(NSFileManager.class, @selector(removeItemAtPath:error:), (IMP)Remove, (IMP *)&OldRemove);
