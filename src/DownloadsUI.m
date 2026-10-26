@@ -70,8 +70,8 @@ self.table=[[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleP
 - (void)dealloc{[_rangeDisplay invalidate];[_timer invalidate];[[NSNotificationCenter defaultCenter] removeObserver:self];}
 - (void)close{[self dismissViewControllerAnimated:YES completion:nil];}
 - (NSString*)kind{return self.mediaTabs.selectedSegmentIndex==1?@"video":self.mediaTabs.selectedSegmentIndex==2?@"image":@"all";}
-- (void)modeChanged{self.selecting=NO;self.collapsed=NO;[self.selection removeAllObjects];self.allButton.hidden=YES;self.batchBar.hidden=YES;self.moreButton.hidden=NO;self.moreButton.menu=[self topMenu];[self.view setNeedsLayout];[self readData];if(self.mainTabs.selectedSegmentIndex==1){dispatch_async(dispatch_get_main_queue(),^{if(self.visible)PVXRefreshCollection();});}}
-- (void)filterChanged{[self.selection removeAllObjects];if(self.mainTabs.selectedSegmentIndex==1){[self readData];dispatch_async(dispatch_get_main_queue(),^{if(self.visible)PVXRefreshCollection();});}else[self applyFilter:YES];}
+- (void)modeChanged{self.selecting=NO;self.collapsed=NO;[self.selection removeAllObjects];self.allButton.hidden=YES;self.batchBar.hidden=YES;self.moreButton.hidden=NO;self.moreButton.menu=[self topMenu];[self.view setNeedsLayout];[self readData];if(self.mainTabs.selectedSegmentIndex==1){__weak typeof(self)weak=self;dispatch_after(dispatch_time(DISPATCH_TIME_NOW,0.35*NSEC_PER_SEC),dispatch_get_main_queue(),^{if(weak.visible&&weak.mainTabs.selectedSegmentIndex==1&&!weak.presentedViewController)PVXRefreshCollection();});}}
+- (void)filterChanged{[self.selection removeAllObjects];if(self.mainTabs.selectedSegmentIndex==1)[self readData];else[self applyFilter:YES];}
 - (void)refresh{PVXRefreshCollection();[self readData];[self.table.refreshControl endRefreshing];}
 - (void)collectionChanged:(NSNotification*)note{if(self.mainTabs.selectedSegmentIndex==1&&!self.presentedViewController)[self readData];}
 - (void)collapse{self.collapsed=!self.collapsed;[self applyFilter:YES];}
