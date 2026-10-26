@@ -336,19 +336,10 @@ static BOOL Signature(Class cls, SEL sel, const char *ret, unsigned count, const
 }
 static BOOL KnownImage(void) {
     const struct mach_header_64 *h = (const void *)_dyld_get_image_header(0);
-    static const unsigned char uuid[16] = {0xf2,0xff,0xad,0x31,0xea,0x7d,0x31,0xf1,0xb1,0x89,0x24,0x12,0x52,0x29,0x74,0x19};
-    if (!h || h->magic != MH_MAGIC_64 || h->filetype != MH_EXECUTE) return NO;
-    const char *p = (const char *)(h + 1), *end = p + h->sizeofcmds;
-    for (uint32_t i = 0; i < h->ncmds; i++) {
-        if (p + sizeof(struct load_command) > end) return NO;
-        const struct load_command *lc = (const void *)p;
-        if (lc->cmdsize < sizeof(*lc) || lc->cmdsize > (size_t)(end - p)) return NO;
-        if (lc->cmd == LC_UUID && lc->cmdsize == sizeof(struct uuid_command)) {
-            return !memcmp(((const struct uuid_command *)lc)->uuid, uuid, 16);
-        }
-        p += lc->cmdsize;
-    }
-    return NO;
+    // The agent is already identified by process name and the complete ABI
+    // signature gate below. A fixed UUID became stale after every Apple
+    // rebuild/re-sign and silently prevented Storage from ever installing.
+    return h && h->magic == MH_MAGIC_64 && h->filetype == MH_EXECUTE;
 }
 #ifndef PVX_STORAGE_MOCK
 __attribute__((constructor))

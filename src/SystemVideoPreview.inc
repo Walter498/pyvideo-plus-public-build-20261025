@@ -53,13 +53,30 @@ static void PVXPresentSystemVideo(NSURL *url,NSDictionary *options) {
     UIViewController *presenter=PVXPresenter();
     if(!presenter||presenter.isBeingDismissed||presenter.isBeingPresented){PVXAlert(@"无法打开视频",@"当前页面正在切换，请稍后重试。");return;}
     if(PVXNativeVideos.count){PVXAlert(@"已有视频正在播放",@"请先关闭当前系统播放器或画中画，再打开另一段视频。");return;}
-    AVURLAsset *asset=[AVURLAsset URLAssetWithURL:url options:options?:@{}];__block BOOL finished=NO;
+    AVURLAsset *asset=[AVURLAsset URLAssetWithURL:url options:options?:@{}];
+    BOOL manifest=[url.path.lowercaseString containsString:@".m3u8"]||[url.path.lowercaseString containsString:@".mpd"];
+    __block BOOL finished=NO;
+    void (^present)(void)=^{
+        if(finished)return;
+        NSError *loadError=nil;
+        if(!manifest){
+            AVKeyValueStatus tracksStatus=[asset statusOfValueForKey:@"tracks" error:&loadError];
+            AVKeyValueStatus playableStatus=[asset statusOfValueForKey:@"playable" error:NULL];
+            if(tracksStatus==AVKeyValueStatusFailed&&playableStatus==AVKeyValueStatusFailed){finished=YES;PVXAlert(@"视频无法预览",loadError.localizedDescription?:@"系统无法读取媒体清单或视频轨道。");return;}
+        }
+        PVXSystemVideoSession *session=[PVXSystemVideoSession new];
+        AVAudioSession *audio=AVAudioSession.sharedInstance;session.previousCategory=audio.category;session.previousMode=audio.mode;session.previousOptions=audio.categoryOptions;NSError *error=nil;
+        if(![audio setCategory:AVAudioSessionCategoryPlayback mode:AVAudioSessionModeMoviePlayback options:0 error:&error]||![audio setActive:YES error:&error]){finished=YES;if(session.previousCategory.length)[audio setCategory:session.previousCategory mode:session.previousMode options:session.previousOptions error:nil];PVXAlert(@"无法播放视频",error.localizedDescription?:@"无法启用系统音频会话。");return;}
+        session.audioActive=YES;session.item=[AVPlayerItem playerItemWithAsset:asset];AVPlayerViewController *controller=[[AVPlayerViewController alloc]init];controller.player=[AVPlayer playerWithPlayerItem:session.item];controller.showsPlaybackControls=YES;controller.allowsPictureInPicturePlayback=YES;controller.canStartPictureInPictureAutomaticallyFromInline=YES;controller.requiresLinearPlayback=NO;controller.videoGravity=AVLayerVideoGravityResizeAspect;controller.modalPresentationStyle=UIModalPresentationFullScreen;controller.delegate=session;session.controller=controller;if(!PVXNativeVideos)PVXNativeVideos=[NSMutableSet set];[PVXNativeVideos addObject:session];session.observing=YES;[session.item addObserver:session forKeyPath:@"status" options:NSKeyValueObservingOptionNew context:&PVXNativeItemContext];session.cleanupAfter=NSDate.date.timeIntervalSince1970+5;__weak PVXSystemVideoSession *weak=session;session.timer=[NSTimer timerWithTimeInterval:.5 repeats:YES block:^(NSTimer *timer){PVXSystemVideoSession *s=weak;if(!s||NSDate.date.timeIntervalSince1970<s.cleanupAfter)return;if(!s.pipStarting&&!s.pipActive&&!s.restoring&&!s.controller.isBeingPresented&&!s.controller.isBeingDismissed&&!s.controller.presentingViewController&&!s.controller.viewIfLoaded.window)[s finish];}];[NSRunLoop.mainRunLoop addTimer:session.timer forMode:NSRunLoopCommonModes];[presenter presentViewController:controller animated:YES completion:^{if(session.finished)return;session.started=YES;session.cleanupAfter=0;[controller.player play];}];
+    };
+    if(manifest){
+        // HLS/DASH tracks are delivered asynchronously by AVPlayerItem. Do not
+        // block the player behind AVURLAsset's initial `tracks` state.
+        present();
+        return;
+    }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,20*NSEC_PER_SEC),dispatch_get_main_queue(),^{if(!finished){finished=YES;PVXAlert(@"视频读取超时",@"未能在 20 秒内读取视频轨道，请检查媒体源或登录状态。");}});
-    [asset loadValuesAsynchronouslyForKeys:@[@"tracks",@"playable",@"duration"] completionHandler:^{dispatch_async(dispatch_get_main_queue(),^{
-        NSError *loadError=nil;AVKeyValueStatus tracksStatus=[asset statusOfValueForKey:@"tracks" error:&loadError];AVKeyValueStatus playableStatus=[asset statusOfValueForKey:@"playable" error:NULL];
-        if(tracksStatus==AVKeyValueStatusFailed&&playableStatus==AVKeyValueStatusFailed){PVXAlert(@"视频无法预览",loadError.localizedDescription?:@"系统无法读取媒体清单或视频轨道。");return;}
-        PVXSystemVideoSession *session=[PVXSystemVideoSession new];AVAudioSession *audio=AVAudioSession.sharedInstance;session.previousCategory=audio.category;session.previousMode=audio.mode;session.previousOptions=audio.categoryOptions;NSError *error=nil;if(![audio setCategory:AVAudioSessionCategoryPlayback mode:AVAudioSessionModeMoviePlayback options:0 error:&error]||![audio setActive:YES error:&error]){if(session.previousCategory.length)[audio setCategory:session.previousCategory mode:session.previousMode options:session.previousOptions error:nil];PVXAlert(@"无法播放视频",error.localizedDescription?:@"无法启用系统音频会话。");return;}session.audioActive=YES;session.item=[AVPlayerItem playerItemWithAsset:asset];AVPlayerViewController *controller=[[AVPlayerViewController alloc]init];controller.player=[AVPlayer playerWithPlayerItem:session.item];controller.showsPlaybackControls=YES;controller.allowsPictureInPicturePlayback=YES;controller.canStartPictureInPictureAutomaticallyFromInline=YES;controller.requiresLinearPlayback=NO;controller.videoGravity=AVLayerVideoGravityResizeAspect;controller.modalPresentationStyle=UIModalPresentationFullScreen;controller.delegate=session;session.controller=controller;if(!PVXNativeVideos)PVXNativeVideos=[NSMutableSet set];[PVXNativeVideos addObject:session];session.observing=YES;[session.item addObserver:session forKeyPath:@"status" options:NSKeyValueObservingOptionNew context:&PVXNativeItemContext];session.cleanupAfter=NSDate.date.timeIntervalSince1970+5;__weak PVXSystemVideoSession *weak=session;session.timer=[NSTimer timerWithTimeInterval:.5 repeats:YES block:^(NSTimer *timer){PVXSystemVideoSession *s=weak;if(!s||NSDate.date.timeIntervalSince1970<s.cleanupAfter)return;if(!s.pipStarting&&!s.pipActive&&!s.restoring&&!s.controller.isBeingPresented&&!s.controller.isBeingDismissed&&!s.controller.presentingViewController&&!s.controller.viewIfLoaded.window)[s finish];}];[NSRunLoop.mainRunLoop addTimer:session.timer forMode:NSRunLoopCommonModes];[presenter presentViewController:controller animated:YES completion:^{if(session.finished)return;session.started=YES;session.cleanupAfter=0;[controller.player play];}];
-    });}];
+    [asset loadValuesAsynchronouslyForKeys:@[@"tracks",@"playable",@"duration"] completionHandler:^{dispatch_async(dispatch_get_main_queue(),present);}];
 }
 static void PVXOpenRemoteSystemVideo(NSDictionary *row) {
     WKWebView *web=PVXCollectionWebView();
