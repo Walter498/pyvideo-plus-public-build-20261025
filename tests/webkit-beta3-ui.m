@@ -71,6 +71,7 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
     PVXSetCollectionWebView(web);
     // Production refresh configures the native handler AND executes the actual resource.
     PVXRefreshCollection();
+    [web evaluateJavaScript:@"setTimeout(()=>{const v=document.createElement('video');v.width=160;v.height=90;v.src='network.mp4';v.title='dynamic network video';document.body.appendChild(v)},500)" completionHandler:nil];
     Later(3.0,^{[web evaluateJavaScript:@"(()=>{const c=globalThis.__pvxMedia_v1;return JSON.stringify({has:!!c,hidden:document.hidden,url:location.href,snapshot:c&&c.snapshot&&c.snapshot()});})()" completionHandler:^(id value,NSError *error){Record(@"collector-debug.txt",[NSString stringWithFormat:@"error=%@\\n%@",error.localizedDescription?:@"",value?:@""]);}];});
     Wait(250,^BOOL{NSArray *vv=PVXCollectedMedia(@"video");BOOL network=NO;for(NSDictionary *row in vv)if([row[@"url"] hasSuffix:@"/network.mp4"])network=YES;return PVXCollectedMedia(@"image").count==1&&vv.count>=2&&network;},^{ [self submit]; },@"real WebKit collector posts DOM and dynamically fetched video sources");
 }
