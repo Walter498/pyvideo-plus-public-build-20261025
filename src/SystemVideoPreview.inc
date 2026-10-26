@@ -86,7 +86,7 @@ static void PVXOpenRemoteSystemVideo(NSDictionary *row) {
 static void PVXOpenSystemVideo(NSDictionary *row) {
     __weak UIViewController *origin=PVXPresenter();
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
-        NSString *path=PVXTaskLocalPath(row);
+        NSString *path=PVXTaskPreviewLocalPath(row);
         dispatch_async(dispatch_get_main_queue(),^{
             UIViewController *host=origin;
             if(!host||host!=PVXPresenter()||!host.viewIfLoaded.window||host.isBeingDismissed)return;

@@ -137,6 +137,7 @@ NSString *PVXTaskLocalPath(NSDictionary *task) {
     for (NSString *relative in paths) { NSString *p = PVXPath(relative); if (PVXRegular(p)) return p; }
     return nil;
 }
+NSString *PVXTaskPreviewLocalPath(NSDictionary *task){id prepared=objc_getAssociatedObject(task,&PVXResolvedFileKey);if([prepared isKindOfClass:NSString.class]&&PVXRegular(prepared))return prepared;NSString *uuid=task[@"id"];if(!PVXUUID(uuid))return nil;NSString *organized=PVXOrganized(uuid,PVXMetadata(uuid));if(PVXRegular(organized))return organized;NSArray *paths=[task[@"kind"] isEqual:@"image"]?@[[NSString stringWithFormat:@"image-media/%@.original",uuid]]:@[[NSString stringWithFormat:@"retained/%@.mp4",uuid],[NSString stringWithFormat:@"media/%@.mp4.compatible.mp4",uuid],[NSString stringWithFormat:@"media/%@.mp4",uuid]];for(NSString *relative in paths){NSString *p=PVXPath(relative);if(PVXRegular(p))return p;}return nil;}
 BOOL PVXTaskHasLocalFile(NSDictionary *task) { id prepared=objc_getAssociatedObject(task,&PVXResolvedFileKey);if(prepared)return [prepared isKindOfClass:NSString.class];if([task[@"hasLocalFile"] isKindOfClass:NSNumber.class])return [task[@"hasLocalFile"] boolValue];return PVXTaskLocalPath(task)!=nil; }
 #if defined(PVX_FOUNDATION_TEST)
 BOOL PVXAutoSavePhotos(void) { return NO; }
