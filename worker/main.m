@@ -101,10 +101,12 @@ static NSString *PVXFile(NSString *uuid) { return [uuid stringByAppendingString:
 // Validate before NSHTTPCookie sees any untrusted property classes. Do not accept
 // archived objects, arbitrary headers, filesystem URLs, or cookies without path.
 static NSDictionary *PVXRequest(NSDictionary *d, NSString *uuid) {
-    if (!PVXKeys(d,@[@"id",@"kind",@"url",@"title",@"page",@"created",@"headers",@"cookies"]) ||
+    if (!PVXKeys(d,@[@"id",@"kind",@"url",@"title",@"page",@"created",@"headers",@"cookies",@"width",@"height",@"protocol",@"mime",@"sourceKind"]) ||
         !PVXID(d[@"id"]) || ![d[@"id"] isEqual:uuid] || ![d[@"kind"] isEqual:@"image"] ||
         !PVXURL(d[@"url"]) || !PVXString(d[@"title"],1024) || !PVXString(d[@"page"],16384) ||
         ([d[@"page"] length] && !PVXURL(d[@"page"])) || !PVXNumber(d[@"created"]) || [d[@"created"] doubleValue] < 0 ||
+        ([d[@"width"] isKindOfClass:NSNumber.class] && (!PVXNumber(d[@"width"]) || [d[@"width"] doubleValue] < 0 || [d[@"width"] doubleValue] > 100000)) ||
+        ([d[@"height"] isKindOfClass:NSNumber.class] && (!PVXNumber(d[@"height"]) || [d[@"height"] doubleValue] < 0 || [d[@"height"] doubleValue] > 100000)) ||
         !PVXKeys(d[@"headers"],@[@"Referer",@"User-Agent"]) ||
         ![d[@"cookies"] isKindOfClass:NSArray.class] || [d[@"cookies"] count] > 512) return nil;
     for (NSString *key in d[@"headers"]) {
