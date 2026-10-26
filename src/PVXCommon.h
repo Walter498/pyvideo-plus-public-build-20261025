@@ -11,6 +11,7 @@ FOUNDATION_EXPORT void PVXInstallPlayerHooks(void);
 FOUNDATION_EXPORT void PVXInstallInlinePiP(void);
 FOUNDATION_EXPORT void PVXInstallImages(void);
 FOUNDATION_EXPORT void PVXLog(NSString *format, ...) NS_FORMAT_FUNCTION(1,2);
+FOUNDATION_EXPORT void PVXDiagEvent(NSString *component, NSString *event, NSDictionary * _Nullable fields);
 FOUNDATION_EXPORT BOOL PVXHook(Class _Nullable cls, SEL sel, IMP replacement, IMP _Nullable * _Nullable original);
 FOUNDATION_EXPORT id _Nullable PVXGet(id _Nullable object, NSString *key);
 FOUNDATION_EXPORT id _Nullable PVXBrowser(void);
