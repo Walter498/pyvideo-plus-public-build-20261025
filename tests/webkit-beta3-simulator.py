@@ -91,7 +91,7 @@ def main():
     shutil.copy2(P / 'resources/MediaCollector.js', app / 'MediaCollector.js')
     (out / 'fixture.png').write_bytes(png)
     sources = ['src/Images.m', 'src/Collection.m', 'src/TaskSupport.m', 'src/DownloadsUI.m',
-               'src/PVXCommon.h', 'worker/main.m', 'resources/MediaCollector.js', 'tests/webkit-beta3-ui.m',
+               'src/PVXCommon.h', 'src/PVXMediaResource.h', 'worker/main.m', 'resources/MediaCollector.js', 'tests/webkit-beta3-ui.m',
                'tests/webkit-beta3-simulator.py']
     hashes = {name: hashlib.sha256((P / name).read_bytes()).hexdigest() for name in sources}
     (out / 'source-sha256.json').write_text(json.dumps(hashes, indent=2))
@@ -104,7 +104,7 @@ def main():
          '-mios-simulator-version-min=16.0', '-isysroot', sdk, '-DPVX_TEST=1',
          '-fobjc-arc', '-fblocks', '-Wall', '-Wextra', '-Werror',
          '-Wno-unused-parameter', '-Wno-deprecated-declarations', '-I', P / 'src',
-         P / 'tests/webkit-beta3-ui.m', P / 'src/Images.m', P / 'src/MediaPreview.m', P / 'src/MediaQuality.m', wrapper, '-o', app / 'WebKitBeta3',
+         P / 'tests/webkit-beta3-ui.m', P / 'src/Images.m', P / 'src/MediaPreview.m', P / 'src/MediaQuality.m', P / 'src/MediaMetadata.m', P / 'src/PVXMediaResource.m', wrapper, '-o', app / 'WebKitBeta3',
          '-framework', 'Foundation', '-framework', 'UIKit', '-framework', 'WebKit',
          '-framework', 'ImageIO', '-framework', 'UniformTypeIdentifiers', '-framework', 'AVFoundation', '-framework', 'CoreMedia', '-framework', 'CoreGraphics', '-framework', 'AVKit', '-framework', 'Photos', '-framework', 'AVFAudio', '-framework', 'QuartzCore', '-framework', 'CoreVideo'])
     run(['codesign', '--force', '--sign', '-', app])
