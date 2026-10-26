@@ -59,7 +59,7 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
     Web.navigationDelegate=self; [Host.view addSubview:Web];
     NSString *base=NSProcessInfo.processInfo.environment[@"PVX_FIXTURE_URL"];
     Check([base hasPrefix:@"http://127.0.0.1:"],@"real localhost fixture URL supplied");
-    NSString *html=@"<!doctype html><html><head><title>WebKit beta3 fixture</title></head><body><img width='96' height='96' src='real.png' title='real image'><video width='160' height='90' preload='none' src='real.mp4' title='real video'></video><script>fetch('network.mp4').then(r=>r.arrayBuffer());const ms=new MediaSource();const runtime=document.createElement('video');runtime.src=URL.createObjectURL(ms);runtime.title='MSE runtime fixture';document.body.appendChild(runtime);</script></body></html>";
+    NSString *html=@"<!doctype html><html><head><title>WebKit beta3 fixture</title></head><body><img width='96' height='96' src='real.png' title='real image'><video width='160' height='90' preload='none' src='real.mp4' title='real video'></video><script>fetch('network.mp4').then(r=>r.arrayBuffer());const xhr=new XMLHttpRequest();xhr.open('GET','network.mp4');xhr.send();const ms=new MediaSource();const runtime=document.createElement('video');runtime.src=URL.createObjectURL(ms);runtime.title='MSE runtime fixture';document.body.appendChild(runtime);</script></body></html>";
     [Web loadHTMLString:html baseURL:[NSURL URLWithString:base]];
     return YES;
 }
