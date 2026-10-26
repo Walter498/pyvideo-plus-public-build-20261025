@@ -171,7 +171,7 @@ def main():
         print(text)
         print('Artifacts:', out)
     except Exception:
-        for evidence in docs.glob('webkit-beta3-*'):
+        for evidence in list(docs.glob('webkit-beta3-*')) + list(docs.glob('collector-debug.txt')):
             if evidence.is_file():
                 shutil.copy2(evidence, out / evidence.name)
         diagnostic = subprocess.run(['xcrun', 'simctl', 'spawn', udid, 'log', 'show', '--last', '3m', '--style', 'compact', '--predicate', 'process == "WebKitBeta3"'], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30)

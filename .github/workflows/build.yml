@@ -38,7 +38,7 @@ jobs:
             build/PyVideoPhotoWorker
             build/PyVideoStorage.dylib
             build/cloud-build.json
-            tests/webkit-beta3-output/**/result.txt
+            tests/webkit-beta3-output/**/*.txt
             tests/webkit-beta3-output/**/artifacts.json
             tests/webkit-beta3-output/**/*.png
             tests/webkit-beta3-output/**/source-sha256.json
