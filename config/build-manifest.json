@@ -1,18 +1,18 @@
 {
   "plugin": [
-    "Main.m",
-    "Images.m",
-    "Menus.m",
-    "Player.m",
-    "DownloadsUI.m",
-    "TaskSupport.m",
-    "PiPInline.m",
-    "Collection.m",
-    "MediaPreview.m",
-    "MediaQuality.m",
-    "MediaMetadata.m",
-    "PVXMediaResource.m",
-    "PVXDiagnostics.m"
+    "src/Main.m",
+    "src/Images.m",
+    "src/Menus.m",
+    "src/Player.m",
+    "src/DownloadsUI.m",
+    "src/TaskSupport.m",
+    "src/PiPInline.m",
+    "src/Collection.m",
+    "src/MediaPreview.m",
+    "src/MediaQuality.m",
+    "src/MediaMetadata.m",
+    "src/PVXMediaResource.m",
+    "src/PVXDiagnostics.m"
   ],
   "photo_worker": ["worker/main.m"],
   "storage": ["storage/Storage.m", "storage/PVXHLSManifest.m"]
