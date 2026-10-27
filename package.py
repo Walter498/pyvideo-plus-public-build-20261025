@@ -23,6 +23,12 @@ for archive,root in [('data',STAGE),('control',STAGE/'DEBIAN')]:
    target.chmod(m.mode)
 def place(source,destination,mode=0o644):
  target=STAGE/destination;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(Path(source).read_bytes());target.chmod(mode)
+def retag_arm64e(path):
+ b=bytearray(Path(path).read_bytes());magic,cpu,sub=struct.unpack_from('<III',b,0)
+ if magic!=0xfeedfacf or cpu!=0x100000c:raise RuntimeError('unexpected FFmpeg Mach-O '+str(path))
+ if sub==0x80000002:return
+ if sub!=0:raise RuntimeError('unexpected CPU subtype '+hex(sub)+' '+str(path))
+ struct.pack_into('<I',b,8,0x80000002);Path(path).write_bytes(b)
 cloud=json.loads((P/'build/cloud-build.json').read_text())
 for name in ['PyVideoPlus.dylib','PyVideoPhotoWorker','PyVideoStorage.dylib']:
  p=P/'build'/name;data=p.read_bytes();cpu,sub=struct.unpack_from('<II',data,4)
@@ -47,6 +53,7 @@ for framework in ['ffmpegkit','libavdevice','libavcodec','libavfilter','libavfor
  if not source.is_file():raise RuntimeError('missing FFmpeg runtime '+str(source))
  target='Applications/PyVideoAgent.app/Frameworks/'+framework+'.framework/'+framework
  place(source,target,0o755)
+ retag_arm64e(STAGE/target)
  info=FFMPEG_ROOT/(framework+'.framework')/'Info.plist'
  if info.is_file():place(info,'Applications/PyVideoAgent.app/Frameworks/'+framework+'.framework/Info.plist',0o644)
  subprocess.run(['ldid','-S',str(STAGE/target)],check=True)
