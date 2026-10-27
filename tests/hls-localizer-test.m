@@ -41,6 +41,7 @@ static void Fresh(void) {
         [@"PVX HLS test " stringByAppendingString:NSUUID.UUID.UUIDString]];
     CHECK([[NSFileManager defaultManager] createDirectoryAtPath:cache
         withIntermediateDirectories:YES attributes:nil error:NULL], @"create cache");
+    cache=cache.stringByResolvingSymlinksInPath;
     localizer = [PVXHLSLocalizer new];
 }
 

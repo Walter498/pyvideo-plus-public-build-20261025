@@ -65,6 +65,8 @@ static pthread_mutex_t *PVXVerifiedSharedMutex(void) {
     return shared;
 #endif
 }
+#include "PVXNativeProbe.inc"
+
 BOOL PVXNativeRemuxHLS(NSString *inputPath, NSString *outputPath, NSString **errorText) {
     return PVXNativeRemuxHLSWithCancellation(inputPath, outputPath, nil, NULL, errorText);
 }
@@ -73,6 +75,7 @@ BOOL PVXNativeRemuxHLSWithCancellation(NSString *inputPath, NSString *outputPath
     if (errorText) *errorText = nil;
     if (diagnostic) *diagnostic = nil;
     NSString *stage = @"validate", *message = nil;
+    NSDictionary *probe=nil;
     int rc = 0;
     BOOL called = NO, locked = NO, success = NO;
     pthread_mutex_t *mutex = NULL;
@@ -121,6 +124,7 @@ BOOL PVXNativeRemuxHLSWithCancellation(NSString *inputPath, NSString *outputPath
             stage = @"cancel"; message = detail ?: @"原生封装已取消"; goto done;
         }
         if (rc < 0) {
+            probe=PVXInputProbe(input);
             message = detail ?: @"原生封装返回负错误码（内部 open/find/DTS 阶段未知）"; goto done;
         }
     }
@@ -140,6 +144,7 @@ done:
             @"success": @(success), @"internalStage": @"unknown",
             @"sharedLockVerified": @(mutex != NULL)} mutableCopy];
         if (called) d[@"nativeReturn"] = @(rc);
+        if (probe) d[@"independentProbe"]=probe;
         if (message) d[@"detail"] = message;
         *diagnostic = d;
     }
