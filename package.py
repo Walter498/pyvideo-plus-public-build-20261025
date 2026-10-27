@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
-from tools.agent_exports import expose_mutex, exports
+from tools.agent_exports import expose_mutex, verify_signed_contract
 from tools.artifact_contract import source_contract
 import os,tarfile,plistlib,json,hashlib,subprocess,struct,io,re
 P=Path(__file__).resolve().parent
@@ -59,6 +59,7 @@ data[0x197fac:0x197fb0]=bytes.fromhex('c0035fd6')
 patched,export_report=expose_mutex(bytes(data),originalAgent)
 agent.write_bytes(patched)
 subprocess.run(['ldid','-Icom.crctdd.pyvideo','-S'+str(P/'worker/entitlements.plist'),str(agent)],check=True)
+export_report.update(verify_signed_contract(agent.read_bytes(),originalAgent))
 # libSandy keys AllowedProcesses by CodeDirectory identifier, not Info.plist.
 def signing_identifiers(binary):
  b=Path(binary).read_bytes();n=struct.unpack_from('<I',b,16)[0];pos=32;off=None

@@ -80,7 +80,8 @@ static void ClosedResource(NSString *uri) {
     CHECK(realpath(url.path.fileSystemRepresentation,actual)&&realpath(cache.fileSystemRepresentation,root),@"physical paths exist");
     NSString *actualPath=[NSString stringWithUTF8String:actual];
     NSString *rootPath=[NSString stringWithUTF8String:root];
-    CHECK([actualPath hasPrefix:[rootPath stringByAppendingString:@"/"]], [NSString stringWithFormat:@"resource %@ inside root %@",actualPath,rootPath]);
+    NSString *boundaryMessage=[NSString stringWithFormat:@"resource %@ inside root %@",actualPath,rootPath];
+    CHECK([actualPath hasPrefix:[rootPath stringByAppendingString:@"/"]],boundaryMessage);
     CHECK([[NSFileManager defaultManager] fileExistsAtPath:url.path], @"resource exists");
 }
 

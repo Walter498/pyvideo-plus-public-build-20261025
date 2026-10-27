@@ -93,3 +93,24 @@ def expose_mutex(binary,original):
     struct.pack_into('<Q',b,linkedit+48,len(b)-lo)
     struct.pack_into('<Q',b,linkedit+32,(len(b)-lo+0x3fff)&~0x3fff)
     return bytes(b),{'alias':ALIAS,'relativeAddress':hex(MUTEX_REL),'originalExports':len(old),'exportsPreserved':True,'newTrieSize':len(trie)}
+
+def export_map(binary):
+    count=struct.unpack_from('<I',binary,16)[0];pos=32
+    for _ in range(count):
+        cmd,size=struct.unpack_from('<II',binary,pos)
+        if cmd==0x80000033:
+            off,n=struct.unpack_from('<II',binary,pos+8)
+            if off+n>len(binary):raise ValueError('export trie outside file after signing')
+            return exports(binary[off:off+n])
+        pos+=size
+    raise ValueError('no export trie')
+
+def verify_signed_contract(binary,original):
+    before=export_map(original);after=export_map(binary)
+    assert after.get(ALIAS)==uleb(0)+uleb(MUTEX_REL),'missing or incorrect shared mutex alias'
+    assert all(after.get(name)==terminal for name,terminal in before.items()),'original export changed'
+    assert len(after)==len(before)+1,'unexpected export changes'
+    assert binary[4:12]==original[4:12],'CPU architecture changed'
+    assert binary[0x4000:0x197fac]==original[0x4000:0x197fac],'executable code changed'
+    assert binary[0x197fb0:0x234000]==original[0x197fb0:0x234000],'native remux code changed'
+    return {'exportsVerifiedAfterSigning':True,'originalExportCount':len(before),'architecturePreserved':True}
