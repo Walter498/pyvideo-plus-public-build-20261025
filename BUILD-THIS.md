@@ -1,6 +1,6 @@
 # Safari Arthur Downloads — 当前可编译源码包
 
-源码基线：`8fbb51d6db3965ca68949ad6fe4e4497919df864`
+源码基线：当前分支 `83491e9efcbd9e0cc284e9910b68887bdd8daeec`
 工作区包含该提交之后的当前媒体元数据、统一资源加载器、构建清单和打包脚本修改。
 
 ## 1. Apple macOS / Xcode 编译
@@ -13,21 +13,10 @@ python3 build-macos.py
 cat build/cloud-build.json
 ```
 
-生产编译源文件已经包含：
+生产构建输入由以下清单维护：
 
 ```text
-src/Main.m
-src/Images.m
-src/Menus.m
-src/Player.m
-src/DownloadsUI.m
-src/TaskSupport.m
-src/PiPInline.m
-src/Collection.m
-src/MediaPreview.m
-src/MediaQuality.m
-src/MediaMetadata.m
-src/PVXMediaResource.m
+config/build-manifest.json
 ```
 
 输出：
@@ -76,11 +65,13 @@ sh tests/export-beta3-check.sh
 /var/minis/workspace/yase-25.3/Payload/YSBrowser.app/Frameworks
 ```
 
-准备好上述目录后：
+准备好上述目录后，可通过环境变量覆盖默认路径：
 
 ```sh
+export PYVIDEO_BASE_PAYLOAD=/path/to/pyvideo-0.0.3-analysis
+export PYVIDEO_FFMPEG_ROOT=/path/to/YSBrowser.app/Frameworks
 python3 package.py
-ls -lh dist/Safari-Arthur-Downloads-1.3.0-media-engine-self-tested-iphoneos-arm64e.deb
+ls -lh dist/Safari-Arthur-Downloads-1.4.0-storage-recovery-refactor-iphoneos-arm64e.deb
 cat dist/manifest.json
 ```
 
