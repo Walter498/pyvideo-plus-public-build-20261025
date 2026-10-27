@@ -526,7 +526,7 @@ static BOOL PVXRemote(NSURL *url) {
         // rather than handing an application token to the media demuxer.
         if ([tag isEqual:@"#EXT-X-TOKEN"]) continue;
         if ([line hasPrefix:@"#EXT"] && ![line containsString:@":"] &&
-            ![@[@"#EXTM3U", @"#EXT-X-ENDLIST", @"#EXT-X-DISCONTINUITY",
+            ![@[@"#EXTM3U", @"#EXT-X-ENDLIST", @"#EXT-X-DISCONTINUITY", @"#EXT-X-GAP",
                 @"#EXT-X-INDEPENDENT-SEGMENTS", @"#EXT-X-I-FRAMES-ONLY"] containsObject:line]) {
             return PVXFail(error, PVXHLSLocalizerInvalidInput, @"Missing tag value", line);
         }
