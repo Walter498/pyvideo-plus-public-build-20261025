@@ -3,6 +3,8 @@
 #import "PVXHLSManifest.h"
 #include <math.h>
 #include <unistd.h>
+#include <stdlib.h>
+#include <limits.h>
 
 static NSUInteger checks = 0;
 #define CHECK(condition, message) do { \
@@ -74,7 +76,11 @@ static void Failure(NSDictionary *task, NSInteger code) {
 static void ClosedResource(NSString *uri) {
     NSURL *url = [NSURL URLWithString:uri];
     CHECK(url.isFileURL, @"only file URI reaches native remux input");
-    CHECK([url.path hasPrefix:[cache stringByAppendingString:@"/"]], @"resource inside root");
+    char actual[PATH_MAX],root[PATH_MAX];
+    CHECK(realpath(url.path.fileSystemRepresentation,actual)&&realpath(cache.fileSystemRepresentation,root),@"physical paths exist");
+    NSString *actualPath=[NSString stringWithUTF8String:actual];
+    NSString *rootPath=[NSString stringWithUTF8String:root];
+    CHECK([actualPath hasPrefix:[rootPath stringByAppendingString:@"/"]], [NSString stringWithFormat:@"resource %@ inside root %@",actualPath,rootPath]);
     CHECK([[NSFileManager defaultManager] fileExistsAtPath:url.path], @"resource exists");
 }
 
