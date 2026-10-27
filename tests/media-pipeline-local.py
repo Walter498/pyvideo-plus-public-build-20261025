@@ -50,7 +50,8 @@ def test_http_contract():
 def test_hls_reorder():
     with tempfile.TemporaryDirectory(prefix="pvx-media-") as td:
         d = Path(td); source = d/"source"; source.mkdir()
-        run("ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-loop", "1", "-i", str(ROOT/"depiction/screenshot-1.jpeg"), "-t", "6", "-c:v", "mpeg2video", "-g", "25", "-b:v", "900k", "-f", "segment", "-segment_time", "1", "-reset_timestamps", "1", "-segment_format", "mpegts", str(source/"orig-%03d.ts"))
+        input_image=d/"source.png";input_image.write_bytes(PNG)
+        run("ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-loop", "1", "-i", str(input_image), "-t", "6", "-c:v", "mpeg2video", "-g", "25", "-b:v", "900k", "-f", "segment", "-segment_time", "1", "-reset_timestamps", "1", "-segment_format", "mpegts", str(source/"orig-%03d.ts"))
         originals = sorted(source.glob("orig-*.ts"))
         assert len(originals) >= 5
         cache = d/"uuid.hls"; cache.mkdir()
