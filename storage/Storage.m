@@ -126,7 +126,6 @@ static NSString *(*Root)(void);
 static NSString *(*Media)(NSString *);
 static BOOL (*Write)(id, NSString *, NSError **);
 static void (*Notify)(NSString *);
-static void (*Hook)(Class, SEL, IMP, IMP *);
 static id (*OldTasks)(id, SEL);
 static BOOL (*OldStart)(id, SEL);
 static void (*OldExport)(id, SEL);
