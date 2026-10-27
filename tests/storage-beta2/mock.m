@@ -8,7 +8,7 @@
 @property(strong) NSMutableSet *exports;
 @property(strong) NSDictionary *clearingRequest;
 @end
-static BOOL PVXMockNativeRemux(NSString *inputPath,NSString *outputPath,NSString **errorText){(void)inputPath;(void)outputPath;if(errorText)*errorText=@"mock";return NO;}
+BOOL PVXMockNativeRemux(NSString *inputPath,NSString *outputPath,NSString **errorText){(void)inputPath;(void)outputPath;if(errorText)*errorText=@"mock";return NO;}
 @implementation MockAgent
 - (void)exportReady { Export(self, _cmd); }
 @end
