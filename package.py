@@ -23,12 +23,6 @@ for archive,root in [('data',STAGE),('control',STAGE/'DEBIAN')]:
    target.chmod(m.mode)
 def place(source,destination,mode=0o644):
  target=STAGE/destination;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(Path(source).read_bytes());target.chmod(mode)
-def retag_arm64e(path):
- b=bytearray(Path(path).read_bytes());magic,cpu,sub=struct.unpack_from('<III',b,0)
- if magic!=0xfeedfacf or cpu!=0x100000c:raise RuntimeError('unexpected FFmpeg Mach-O '+str(path))
- if sub==0x80000002:return
- if sub!=0:raise RuntimeError('unexpected CPU subtype '+hex(sub)+' '+str(path))
- struct.pack_into('<I',b,8,0x80000002);Path(path).write_bytes(b)
 cloud=json.loads((P/'build/cloud-build.json').read_text())
 for name in ['PyVideoPlus.dylib','PyVideoPhotoWorker','PyVideoStorage.dylib']:
  p=P/'build'/name;data=p.read_bytes();cpu,sub=struct.unpack_from('<II',data,4)
@@ -43,20 +37,9 @@ for depiction in (P/'depiction').rglob('*'):
  if depiction.is_file():place(depiction,Path('Library/Application Support/PyVideo/depiction')/depiction.relative_to(P/'depiction'))
 
 place(P/'build/PyVideoStorage.dylib','Applications/PyVideoAgent.app/PyVideoStorage.dylib',0o755)
-# FFmpegKit/libav runtime used only by the Storage recovery worker. Keep the
-# original framework install names and rpath layout so FFmpegKit can resolve
-# libavcodec/libavformat and friends inside PyVideoAgent.
-FFMPEG_ROOT=Path(os.environ.get('PYVIDEO_FFMPEG_ROOT','/var/minis/workspace/yase-25.3/Payload/YSBrowser.app/Frameworks'))
-if not FFMPEG_ROOT.is_dir():raise RuntimeError('missing FFmpeg framework root; set PYVIDEO_FFMPEG_ROOT')
-for framework in ['ffmpegkit','libavdevice','libavcodec','libavfilter','libavformat','libavutil','libswscale','libswresample']:
- source=FFMPEG_ROOT/(framework+'.framework')/framework
- if not source.is_file():raise RuntimeError('missing FFmpeg runtime '+str(source))
- target='Applications/PyVideoAgent.app/Frameworks/'+framework+'.framework/'+framework
- place(source,target,0o755)
- retag_arm64e(STAGE/target)
- info=FFMPEG_ROOT/(framework+'.framework')/'Info.plist'
- if info.is_file():place(info,'Applications/PyVideoAgent.app/Frameworks/'+framework+'.framework/Info.plist',0o644)
- subprocess.run(['ldid','-S',str(STAGE/target)],check=True)
+# Storage uses the native AVFoundation TS fallback. No FFmpeg/libav binaries
+# are copied into the package; this removes the arm64/arm64e loader conflict
+# and keeps the package self-contained.
 # Add storage load command and Frameworks RPATH in known zero header padding.
 agent=STAGE/'Applications/PyVideoAgent.app/PyVideoAgent'
 originalAgent=agent.read_bytes();data=bytearray(originalAgent);n,sz=struct.unpack_from('<II',data,16)
@@ -130,7 +113,7 @@ for archive,prefix in [('data',''),('control','DEBIAN/')]:
   for m in tf.getmembers():
    rel=m.name.removeprefix('./').rstrip('/')
    if rel:modes[prefix+rel]=m.mode
-for rel in ['Library/MobileSubstrate/DynamicLibraries/PyVideoPlus.dylib','Applications/PyVideoAgent.app/PyVideoPhotoWorker','Applications/PyVideoAgent.app/PyVideoStorage.dylib','DEBIAN/postinst','DEBIAN/prerm','DEBIAN/postrm']:modes[rel]=0o755
+for rel in ['Applications/PyVideoAgent.app/PyVideoAgent','Library/MobileSubstrate/DynamicLibraries/PyVideoPlus.dylib','Applications/PyVideoAgent.app/PyVideoPhotoWorker','Applications/PyVideoAgent.app/PyVideoStorage.dylib','DEBIAN/postinst','DEBIAN/prerm','DEBIAN/postrm']:modes[rel]=0o755
 for framework in ['ffmpegkit','libavdevice','libavcodec','libavfilter','libavformat','libavutil','libswscale','libswresample']:modes['Applications/PyVideoAgent.app/Frameworks/'+framework+'.framework/'+framework]=0o755
 allfiles=[Path(x) for x in subprocess.check_output(['rg','--files','-uuu',str(STAGE)],text=True).splitlines()]
 size=sum(p.stat().st_size for p in allfiles if 'DEBIAN' not in p.relative_to(STAGE).parts)
