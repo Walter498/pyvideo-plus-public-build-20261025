@@ -31,6 +31,8 @@ for name in ['PyVideoPlus.dylib','PyVideoPhotoWorker','PyVideoStorage.dylib']:
 place(P/'build/PyVideoPlus.dylib','Library/MobileSubstrate/DynamicLibraries/PyVideoPlus.dylib',0o755)
 place(P/'build/PyVideoPhotoWorker','Applications/PyVideoAgent.app/PyVideoPhotoWorker',0o755)
 place(P/'resources/MediaCollector.js','Library/Application Support/PyVideo/MediaCollector.js')
+for old in ['screenshot-1.jpeg','screenshot-2.png','screenshot-3.png','screenshot-4.png','screenshot-5.png']:
+ (STAGE/'Library/Application Support/PyVideo/depiction'/old).unlink(missing_ok=True)
 for depiction in (P/'depiction').rglob('*'):
  if depiction.is_file():place(depiction,Path('Library/Application Support/PyVideo/depiction')/depiction.relative_to(P/'depiction'))
 
