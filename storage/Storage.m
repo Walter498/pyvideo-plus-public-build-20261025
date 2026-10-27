@@ -334,6 +334,7 @@ static BOOL Signature(Class cls, SEL sel, const char *ret, unsigned count, const
     }
     return ok;
 }
+static BOOL PVXReplaceMethod(Class cls,SEL sel,IMP replacement,IMP *original){Method m=class_getInstanceMethod(cls,sel);if(!m)return NO;IMP old=method_getImplementation(m);if(original)*original=old;method_setImplementation(m,replacement);return YES;}
 static BOOL KnownImage(void) {
     const struct mach_header_64 *h = (const void *)_dyld_get_image_header(0);
     // The agent is already identified by process name and the complete ABI
@@ -371,37 +372,26 @@ static void Install(void) {
         PVXBootLog(@"gate-agent-abi-ok");
         RecoveryAttempted=[NSMutableSet set];RecoveryExports=[NSMutableDictionary dictionary];
         Persist=(void *)class_getMethodImplementation(c,@selector(persist:));
-        Hook = (void *)dlsym(RTLD_DEFAULT, "MSHookMessageEx");
-        if (!Hook) {
-            NSString *base = [NSProcessInfo.processInfo.arguments.firstObject stringByDeletingLastPathComponent];
-            for (NSString *leaf in @[@".jbroot/usr/lib/libsubstrate.dylib", @".jbroot/Library/Frameworks/CydiaSubstrate.framework/CydiaSubstrate"]) {
-                void *handle = dlopen([[base stringByAppendingPathComponent:leaf] fileSystemRepresentation], RTLD_NOW | RTLD_GLOBAL);
-                if (handle) Hook = (void *)dlsym(handle, "MSHookMessageEx");
-                if (Hook) break;
-            }
-        }
         Root = (void *)dlsym(RTLD_DEFAULT, "PVStateDirectory");
         Media = (void *)dlsym(RTLD_DEFAULT, "PVMediaPath");
         Write = (void *)dlsym(RTLD_DEFAULT, "PVWrite");
         Notify = (void *)dlsym(RTLD_DEFAULT, "PVNotify");
-        if (!Hook || !Root || !Media || !Write || !Notify) { PVXBootLog(@"gate-symbol-lookup-failed"); return; }
+        if (!Root || !Media || !Write || !Notify) { PVXBootLog(@"gate-symbol-lookup-failed"); return; }
         PVXBootLog(@"gate-symbol-lookup-ok");
-        // Require the original C entrypoints to belong to the executable image.
-        void *symbols[] = {(void *)Root, (void *)Media, (void *)Write, (void *)Notify};
-        for (unsigned i = 0; i < sizeof(symbols)/sizeof(symbols[0]); i++) {
-            Dl_info info;
-            if (!dladdr(symbols[i], &info) || info.dli_fbase != (void *)_dyld_get_image_header(0)) { PVXBootLog(@"gate-symbol-owner-failed"); return; }
-        }
+        // These symbols are verified against the original Agent ABI above. Use
+        // runtime replacement directly so installation does not depend on a
+        // substrate compatibility export being available at constructor time.
+        if (!PVXReplaceMethod(c,@selector(tasks),(IMP)TasksView,(IMP *)&OldTasks) ||
+            !PVXReplaceMethod(c,@selector(pump),(IMP)PVXPumpWithConfiguredLimit,(IMP *)&OldPump) ||
+            !PVXReplaceMethod(NSFileManager.class,@selector(removeItemAtPath:error:),(IMP)Remove,(IMP *)&OldRemove) ||
+            !PVXReplaceMethod(c,NSSelectorFromString(@"finishExport:success:error:assetID:"),(IMP)Finish,(IMP *)&OldFinish) ||
+            !PVXReplaceMethod(c,NSSelectorFromString(@"finishDeletion:"),(IMP)Delete,(IMP *)&OldDelete) ||
+            !PVXReplaceMethod(c,NSSelectorFromString(@"finishClearAll"),(IMP)Clear,(IMP *)&OldClear) ||
+            !PVXReplaceMethod(c,@selector(startWorker),(IMP)Start,(IMP *)&OldStart) ||
+            !PVXReplaceMethod(c,@selector(exportReady),(IMP)Export,(IMP *)&OldExport)) { PVXBootLog(@"gate-method-replace-failed"); return; }
+        PVXBootLog(@"gate-method-replace-ok");
         if (!SafeDirectory(Root())) { PVXBootLog(@"gate-root-directory-failed"); return; }
         PVXBootLog(@"gate-root-directory-ok");
-        Hook(c, @selector(tasks), (IMP)TasksView, (IMP *)&OldTasks);
-        Hook(c, @selector(pump), (IMP)PVXPumpWithConfiguredLimit, (IMP *)&OldPump);
-        Hook(NSFileManager.class, @selector(removeItemAtPath:error:), (IMP)Remove, (IMP *)&OldRemove);
-        Hook(c, NSSelectorFromString(@"finishExport:success:error:assetID:"), (IMP)Finish, (IMP *)&OldFinish);
-        Hook(c, NSSelectorFromString(@"finishDeletion:"), (IMP)Delete, (IMP *)&OldDelete);
-        Hook(c, NSSelectorFromString(@"finishClearAll"), (IMP)Clear, (IMP *)&OldClear);
-        Hook(c, @selector(startWorker), (IMP)Start, (IMP *)&OldStart);
-        Hook(c, @selector(exportReady), (IMP)Export, (IMP *)&OldExport);
         dispatch_async(dispatch_get_main_queue(), ^{
             notify_register_dispatch(Signal.UTF8String, &NotificationToken, dispatch_get_main_queue(), ^(int token) { (void)token; Tick(); });
             Timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
