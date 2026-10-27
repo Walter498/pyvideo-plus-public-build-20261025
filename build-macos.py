@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
+from tools.artifact_contract import source_contract
 import subprocess,struct,json,hashlib
 P=Path(__file__).resolve().parent;B=P/'build';B.mkdir(exist_ok=True)
 manifest=json.loads((P/'config/build-manifest.json').read_text())
@@ -29,7 +30,7 @@ plugin_sources=sources('plugin')
 run(plugin_flags+['-dynamiclib','-Wl,-install_name,@loader_path/PyVideoPlus.dylib','-o',B/'PyVideoPlus.dylib']+plugin_sources)
 run(worker_flags+['-o',B/'PyVideoPhotoWorker']+sources('photo_worker'))
 run(storage_flags+['-dynamiclib','-Wl,-install_name,@executable_path/PyVideoStorage.dylib','-Wl,-rpath,@executable_path/Frameworks','-Wl,-rpath,@loader_path/../Frameworks','-o',B/'PyVideoStorage.dylib']+sources('storage'))
-info={}
+info={'_source':source_contract(P)}
 for name in ['PyVideoPlus.dylib','PyVideoPhotoWorker','PyVideoStorage.dylib']:
  p=B/name;data=p.read_bytes();magic,cpu,sub,typ=struct.unpack_from('<IIII',data)
  assert magic==0xfeedfacf and cpu==0x100000c and sub&0xffffff==2,(name,hex(sub))

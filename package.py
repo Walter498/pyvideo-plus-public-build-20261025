@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 from pathlib import Path
 from tools.agent_exports import expose_mutex, exports
+from tools.artifact_contract import source_contract
 import os,tarfile,plistlib,json,hashlib,subprocess,struct,io,re
-VERSION='1.4.0'
 P=Path(__file__).resolve().parent
+VERSION=re.search(r'#define PVX_VERSION @"([^"]+)"',(P/'src/PVXCommon.h').read_text())[1]
 ORIG=Path(os.environ.get('PYVIDEO_BASE_PAYLOAD','/var/minis/workspace/pyvideo-0.0.3-analysis'))
 STAGE=P/'package';DIST=P/'dist';DIST.mkdir(exist_ok=True)
 if not (ORIG/'archive/data.tar.xz').is_file() or not (ORIG/'archive/control.tar.xz').is_file():raise RuntimeError('missing base payload archives; set PYVIDEO_BASE_PAYLOAD')
@@ -25,6 +26,7 @@ for archive,root in [('data',STAGE),('control',STAGE/'DEBIAN')]:
 def place(source,destination,mode=0o644):
  target=STAGE/destination;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(Path(source).read_bytes());target.chmod(mode)
 cloud=json.loads((P/'build/cloud-build.json').read_text())
+assert cloud.get('_source',{}).get('productionSHA256')==source_contract(P)['productionSHA256'],'cloud artifacts built from different production sources'
 for name in ['PyVideoPlus.dylib','PyVideoPhotoWorker','PyVideoStorage.dylib']:
  p=P/'build'/name;data=p.read_bytes();cpu,sub=struct.unpack_from('<II',data,4)
  assert cpu==0x100000c and sub&0xffffff==2,'not genuine arm64e: '+name
