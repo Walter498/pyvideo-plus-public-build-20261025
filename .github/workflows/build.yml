@@ -21,6 +21,13 @@ jobs:
         run: |
           xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -I storage tests/hls-manifest-test.m storage/PVXHLSManifest.m -framework Foundation -o "$RUNNER_TEMP/pvx-hls-test"
           "$RUNNER_TEMP/pvx-hls-test"
+      - name: Execute production HLS localizer and native ABI adapter tests
+        run: |
+          xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I storage tests/hls-localizer-test.m storage/PVXHLSLocalizer.m storage/PVXHLSManifest.m -framework Foundation -o "$RUNNER_TEMP/pvx-localizer-test"
+          "$RUNNER_TEMP/pvx-localizer-test"
+          sh tests/native-remux-check.sh
+      - name: Decode actual MP4 samples using production validator
+        run: sh tests/media-validator-check.sh
       - name: Build true arm64e using Apple compiler and linker
         run: python3 build-macos.py
       - name: Test storage hooks and disk retention

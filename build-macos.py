@@ -17,7 +17,7 @@ sdk=run(['xcrun','--sdk','iphoneos','--show-sdk-path'])
 flags=['xcrun','--sdk','iphoneos','clang','-arch','arm64e','-miphoneos-version-min=15.0','-isysroot',sdk,'-F'+sdk+'/System/Library/SubFrameworks','-fobjc-arc','-fblocks','-Os','-Wall','-Wextra','-Werror','-Wno-unused-parameter','-Wno-deprecated-declarations','-I',P/'src']
 plugin_frameworks=['Foundation','UIKit','WebKit','AVFoundation','AVFAudio','AVKit','Photos','ImageIO','CoreGraphics','CoreMedia','QuartzCore','UniformTypeIdentifiers']
 worker_frameworks=['Foundation','ImageIO','UniformTypeIdentifiers']
-storage_frameworks=['Foundation','AVFoundation','CoreMedia']
+storage_frameworks=['Foundation','AVFoundation','CoreMedia','CoreVideo','CoreGraphics']
 def frameworks(names):
  out=[]
  for name in names:out += ['-framework',name]

@@ -17,6 +17,6 @@ clang -target arm64-apple-ios15.0 -fobjc-arc -fblocks -fsyntax-only -isysroot "$
 echo 'PASS SDK16.5: strict production syntax + arm64 object; Foundation mock syntax only (not executed)'
 # On macOS ONLY, execute the Foundation mock against production hook bodies:
 if [ "$(uname -s)" = Darwin ]; then
-    xcrun clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-variable -Wno-deprecated-declarations "$ROOT/tests/storage-beta2/mock.m" "$ROOT/storage/PVXHLSManifest.m" -framework Foundation -framework AVFoundation -framework CoreMedia -o "$OUT/mock"
+    xcrun clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-variable -Wno-deprecated-declarations "$ROOT/tests/storage-beta2/mock.m" "$ROOT/storage/PVXHLSManifest.m" "$ROOT/storage/PVXHLSLocalizer.m" "$ROOT/storage/PVXNativeRemux.m" "$ROOT/storage/PVXMediaValidator.m" -framework Foundation -framework AVFoundation -framework CoreMedia -framework CoreVideo -framework CoreGraphics -o "$OUT/mock"
     "$OUT/mock"
 fi

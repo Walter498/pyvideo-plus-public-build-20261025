@@ -90,9 +90,11 @@ def test_source_guards():
     assert '&&http.statusCode<300&&!errorBody&&(manifest||video)' in main
     assert 'request.HTTPMethod=@"HEAD"' not in metadata
     assert 'PVXImageData' in metadata and 'bytes=0-0' in metadata
-    assert 'PVXHLSManifest' in storage
+    assert 'PVXHLSLocalizer' in storage
+    recovery=(ROOT/'storage/PVXRecovery.inc').read_text()
     assert 'PVRemuxHLSWithCancel' in (ROOT/'storage/PVXNativeRemux.m').read_text()
-    assert 'recovery-started' in storage
+    assert 'recovery-started' in recovery
+    assert 'PVXValidateMediaFile' in recovery
     assert 'if(!self.requested&&NSDate.date.timeIntervalSince1970>=self.retryAfter)' in ui
     print("PASS source: GET/ImageIO metadata, no-playlist recovery, collection thumbnail trigger")
 

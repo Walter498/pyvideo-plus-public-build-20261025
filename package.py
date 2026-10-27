@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
+from tools.agent_exports import expose_mutex, exports
 import os,tarfile,plistlib,json,hashlib,subprocess,struct,io,re
 VERSION='1.4.0'
 P=Path(__file__).resolve().parent
@@ -37,9 +38,8 @@ for depiction in (P/'depiction').rglob('*'):
  if depiction.is_file():place(depiction,Path('Library/Application Support/PyVideo/depiction')/depiction.relative_to(P/'depiction'))
 
 place(P/'build/PyVideoStorage.dylib','Applications/PyVideoAgent.app/PyVideoStorage.dylib',0o755)
-# Storage uses the native AVFoundation TS fallback. No FFmpeg/libav binaries
-# are copied into the package; this removes the arm64/arm64e loader conflict
-# and keeps the package self-contained.
+# Reuse the Agent's existing arm64e libav and its original shared mutex.
+# No external FFmpegKit binaries or architecture-header rewriting.
 # Add storage load command and Frameworks RPATH in known zero header padding.
 agent=STAGE/'Applications/PyVideoAgent.app/PyVideoAgent'
 originalAgent=agent.read_bytes();data=bytearray(originalAgent);n,sz=struct.unpack_from('<II',data,16)
@@ -54,7 +54,8 @@ struct.pack_into('<II',data,16,n+2,sz+load_size+rpath_size);assert data[0x4000:]
 # exportReady entry with plain RET before PAC prologue; downloads/validation intact.
 assert data[0x197fac:0x197fb0]==bytes.fromhex('7f2303d5')
 data[0x197fac:0x197fb0]=bytes.fromhex('c0035fd6')
-agent.write_bytes(data)
+patched,export_report=expose_mutex(bytes(data),originalAgent)
+agent.write_bytes(patched)
 subprocess.run(['ldid','-Icom.crctdd.pyvideo','-S'+str(P/'worker/entitlements.plist'),str(agent)],check=True)
 # libSandy keys AllowedProcesses by CodeDirectory identifier, not Info.plist.
 def signing_identifiers(binary):
@@ -72,7 +73,7 @@ def signing_identifiers(binary):
   ident=struct.unpack_from('>I',b,p+20)[0];end=b.index(b'\0',p+ident);out.append(b[p+ident:end].decode())
  return out
 assert signing_identifiers(agent) and all(x=='com.crctdd.pyvideo' for x in signing_identifiers(agent)),signing_identifiers(agent)
-agentpatch={'path':'Applications/PyVideoAgent.app/PyVideoAgent','change':'Add storage LC_LOAD_DYLIB and @executable_path/Frameworks LC_RPATH; verified exportReady entry VA0x100197fac/file0x197fac PACIBSP -> RET to hard-disable automatic Photos; all other original code bytes preserved; signing identifier com.crctdd.pyvideo retained','sha256':hashlib.sha256(agent.read_bytes()).hexdigest()}
+agentpatch={'path':'Applications/PyVideoAgent.app/PyVideoAgent','exportContract':export_report,'change':'Add storage LC_LOAD_DYLIB and @executable_path/Frameworks LC_RPATH; verified exportReady entry VA0x100197fac/file0x197fac PACIBSP -> RET to hard-disable automatic Photos; all other original code bytes preserved; signing identifier com.crctdd.pyvideo retained','sha256':hashlib.sha256(agent.read_bytes()).hexdigest()}
 
 addon={'Filter':{'Bundles':['com.apple.mobilesafari']}}
 (STAGE/'Library/MobileSubstrate/DynamicLibraries/PyVideoPlus.plist').write_bytes(plistlib.dumps(addon,fmt=plistlib.FMT_BINARY))
@@ -114,7 +115,6 @@ for archive,prefix in [('data',''),('control','DEBIAN/')]:
    rel=m.name.removeprefix('./').rstrip('/')
    if rel:modes[prefix+rel]=m.mode
 for rel in ['Applications/PyVideoAgent.app/PyVideoAgent','Library/MobileSubstrate/DynamicLibraries/PyVideoPlus.dylib','Applications/PyVideoAgent.app/PyVideoPhotoWorker','Applications/PyVideoAgent.app/PyVideoStorage.dylib','DEBIAN/postinst','DEBIAN/prerm','DEBIAN/postrm']:modes[rel]=0o755
-for framework in ['ffmpegkit','libavdevice','libavcodec','libavfilter','libavformat','libavutil','libswscale','libswresample']:modes['Applications/PyVideoAgent.app/Frameworks/'+framework+'.framework/'+framework]=0o755
 allfiles=[Path(x) for x in subprocess.check_output(['rg','--files','-uuu',str(STAGE)],text=True).splitlines()]
 size=sum(p.stat().st_size for p in allfiles if 'DEBIAN' not in p.relative_to(STAGE).parts)
 control.write_text(re.sub(r'Installed-Size: .*',f'Installed-Size: {(size+1023)//1024}',control.read_text()))

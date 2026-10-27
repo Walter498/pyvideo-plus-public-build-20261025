@@ -1,5 +1,4 @@
 #define PVX_STORAGE_MOCK 1
-#define PVXNativeRemuxHLS PVXMockNativeRemux
 #import "../../storage/Storage.m"
 #include <assert.h>
 @interface MockAgent : NSObject
@@ -8,7 +7,6 @@
 @property(strong) NSMutableSet *exports;
 @property(strong) NSDictionary *clearingRequest;
 @end
-BOOL PVXMockNativeRemux(NSString *inputPath,NSString *outputPath,NSString **errorText){(void)inputPath;(void)outputPath;if(errorText)*errorText=@"mock";return NO;}
 @implementation MockAgent
 - (void)exportReady { Export(self, _cmd); }
 @end
