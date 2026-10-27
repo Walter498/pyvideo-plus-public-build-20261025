@@ -1,8 +1,0 @@
-from pathlib import Path
-p=Path('/var/minis/workspace/pyvideo-plus/src/Collection.m');s=p.read_text();needle='void PVXSubmitMedia(NSDictionary *candidate,void(^completion)(NSDictionary *,NSString *)){'
-helper=r'''static void PVXPersistSubmittedSource(NSDictionary *candidate,NSString *uuid){NSString *root=PVXStateRoot();if(!root.length||!uuid.length)return;NSString *dir=[root stringByAppendingPathComponent:@"plus-metadata"];[[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0700} error:nil];NSMutableDictionary *m=[@{@"id":uuid} mutableCopy];for(NSString *key in @[@"url",@"page",@"frame",@"poster",@"protocol",@"mime",@"sourceKind"]){id value=candidate[key];if([value isKindOfClass:NSString.class]&&[value length])m[key]=[value substringToIndex:MIN(16384,[value length])];}for(NSString *key in @[@"width",@"height"]){id value=candidate[key];if([value isKindOfClass:NSNumber.class])m[key]=value;}NSData *data=[NSPropertyListSerialization dataWithPropertyList:m format:NSPropertyListBinaryFormat_v1_0 options:0 error:nil];[data writeToFile:[dir stringByAppendingPathComponent:[uuid stringByAppendingPathExtension:@"plist"]] options:NSDataWritingAtomic error:nil];}
-'''
-assert needle in s;s=s.replace(needle,helper+needle,1)
-old='if(!PVXCollectionWrite(request,kind)){finish(nil,@"无法原子写入下载任务，请检查存储空间与权限。");return;}NSDictionary *receipt='
-new='if(!PVXCollectionWrite(request,kind)){finish(nil,@"无法原子写入下载任务，请检查存储空间与权限。");return;}PVXPersistSubmittedSource(c,uuid);NSDictionary *receipt='
-assert old in s;s=s.replace(old,new,1);p.write_text(s)

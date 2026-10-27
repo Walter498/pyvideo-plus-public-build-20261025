@@ -2,7 +2,7 @@
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <objc/runtime.h>
-#import <objc/message.h>
+#define PVX_VERSION @"1.4.0"
 NS_ASSUME_NONNULL_BEGIN
 FOUNDATION_EXPORT void PVXOpenDownloads(void);
 FOUNDATION_EXPORT void PVXDownloadPlayingVideo(id _Nullable playerContext);

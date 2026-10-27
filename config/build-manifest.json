@@ -1,0 +1,19 @@
+{
+  "plugin": [
+    "Main.m",
+    "Images.m",
+    "Menus.m",
+    "Player.m",
+    "DownloadsUI.m",
+    "TaskSupport.m",
+    "PiPInline.m",
+    "Collection.m",
+    "MediaPreview.m",
+    "MediaQuality.m",
+    "MediaMetadata.m",
+    "PVXMediaResource.m",
+    "PVXDiagnostics.m"
+  ],
+  "photo_worker": ["worker/main.m"],
+  "storage": ["storage/Storage.m", "storage/PVXHLSManifest.m"]
+}

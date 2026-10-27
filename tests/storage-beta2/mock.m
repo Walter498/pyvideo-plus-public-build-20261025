@@ -27,13 +27,9 @@ static BOOL MockRemove(id self, SEL cmd, id p, NSError **error) {
     return [NSFileManager.defaultManager removeItemAtPath:p error:error];
 }
 static void MockExport(id self, SEL cmd) {
-    (void)cmd; ExportCalls++;
-    NSDictionary *view = TasksView(self, @selector(tasks));
-    for (NSMutableDictionary *task in view.allValues) {
-        if (![task[@"state"] isEqual:@"ready"]) continue;
-        LastID = task[@"id"]; task[@"state"] = @"saving";
-        [[self exports] addObject:LastID]; break;
-    }
+    (void)self; (void)cmd; ExportCalls++;
+    // Production Export is intentionally a no-op; this helper is retained
+    // only for the old mock's counter and is never installed.
 }
 static void MockFinish(id self, SEL cmd, id uuid, BOOL success, id error, id assetID) {
     (void)cmd; (void)error; FinishCalls++;
@@ -57,7 +53,7 @@ int main(void) {
         assert(SafeDirectory(TestRoot)); assert(SafeDirectory(Path(@"media")));
         assert(SafeDirectory(Path(@"plus-manual-photos")));
         Root=MockRoot; Media=MockMedia; Write=MockWrite; Notify=MockNotify;
-        OldTasks=MockTasks; OldExport=MockExport; OldFinish=MockFinish; OldRemove=MockRemove;
+        OldFinish=MockFinish; OldRemove=MockRemove;
         MockAgent *a = [MockAgent new]; a.workerMode=YES; a.reconciled=YES; a.memoryReady=YES;
         NSString *u=@"550E8400-E29B-41D4-A716-446655440000", *v=@"550E8400-E29B-41D4-A716-446655440001";
         a.tasks=[@{u:Task(u),v:Task(v)} mutableCopy]; a.exports=[NSMutableSet set];
@@ -70,7 +66,6 @@ int main(void) {
         assert(![NSFileManager.defaultManager fileExistsAtPath:Path([NSString stringWithFormat:@"plus-manual-photos/%@.plist",v])]);
         // A Beta2 transaction was already active before the new hook took over.
         a.tasks[v][@"state"]=@"saving"; [a.exports addObject:v];
-        assert(TasksView(a,@selector(tasks))==a.tasks); assert(!ViewOwner && !ViewTasks);
         [@"original video" writeToFile:Media(v) atomically:YES encoding:NSUTF8StringEncoding error:NULL];
         Finish(a,NULL,v,YES,nil,@"asset-123");
         assert(SimulatedSuccess && [a.tasks[v][@"assetID"] isEqual:@"asset-123"]);
@@ -101,8 +96,7 @@ int main(void) {
             assert(![NSFileManager.defaultManager fileExistsAtPath:Path([NSString stringWithFormat:@"plus-manual-photos/%@.plist",u])]);
         }
         Tick(); assert(ExportCalls==0);
-        assert(!Signature(MockAgent.class,@selector(tasks),"v",0,NULL));
         [NSFileManager.defaultManager removeItemAtPath:TestRoot error:NULL];
-        puts("PASS production hooks: absent/YES/NO/malformed prefs never enter OldExport; obsolete manual commands dropped; ready jobs retained; active Beta2 success retention/collision fallback/failure passthrough; TLS restoration; ABI rejection");
+        puts("PASS production hooks: direct runtime install, no automatic Photos export, retention and failure passthrough");
     }
 }

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 from pathlib import Path
-import os,tarfile,plistlib,json,hashlib,subprocess,struct,shutil,io,re
+import os,tarfile,plistlib,json,hashlib,subprocess,struct,io,re
+VERSION='1.4.0'
 P=Path(__file__).resolve().parent
-ORIG=Path('/var/minis/workspace/pyvideo-0.0.3-analysis')
+ORIG=Path(os.environ.get('PYVIDEO_BASE_PAYLOAD','/var/minis/workspace/pyvideo-0.0.3-analysis'))
 STAGE=P/'package';DIST=P/'dist';DIST.mkdir(exist_ok=True)
+if not (ORIG/'archive/data.tar.xz').is_file() or not (ORIG/'archive/control.tar.xz').is_file():raise RuntimeError('missing base payload archives; set PYVIDEO_BASE_PAYLOAD')
 if STAGE.exists():
  subprocess.run(['rm','-rf',str(STAGE)],check=True)
 STAGE.mkdir()
@@ -36,7 +38,8 @@ place(P/'build/PyVideoStorage.dylib','Applications/PyVideoAgent.app/PyVideoStora
 # FFmpegKit/libav runtime used only by the Storage recovery worker. Keep the
 # original framework install names and rpath layout so FFmpegKit can resolve
 # libavcodec/libavformat and friends inside PyVideoAgent.
-FFMPEG_ROOT=Path('/var/minis/workspace/yase-25.3/Payload/YSBrowser.app/Frameworks')
+FFMPEG_ROOT=Path(os.environ.get('PYVIDEO_FFMPEG_ROOT','/var/minis/workspace/yase-25.3/Payload/YSBrowser.app/Frameworks'))
+if not FFMPEG_ROOT.is_dir():raise RuntimeError('missing FFmpeg framework root; set PYVIDEO_FFMPEG_ROOT')
 for framework in ['ffmpegkit','libavdevice','libavcodec','libavfilter','libavformat','libavutil','libswscale','libswresample']:
  source=FFMPEG_ROOT/(framework+'.framework')/framework
  if not source.is_file():raise RuntimeError('missing FFmpeg runtime '+str(source))
@@ -83,7 +86,7 @@ addon={'Filter':{'Bundles':['com.apple.mobilesafari']}}
 (STAGE/'Library/MobileSubstrate/DynamicLibraries/PyVideoPlus.plist').write_bytes(plistlib.dumps(addon,fmt=plistlib.FMT_BINARY))
 job={'Label':'com.crctdd.pyvideo.photo-worker','ProgramArguments':['/Applications/PyVideoAgent.app/PyVideoPhotoWorker','--worker'],'UserName':'mobile','RunAtLoad':True,'KeepAlive':True,'ThrottleInterval':10,'ProcessType':'Background','JetsamProperties':{'JetsamMemoryLimit':192}}
 photo=STAGE/'Library/LaunchDaemons/com.crctdd.pyvideo.photo-worker.plist';photo.write_bytes(plistlib.dumps(job,fmt=plistlib.FMT_BINARY));photo.chmod(0o644)
-control=STAGE/'DEBIAN/control';raw=control.read_text();raw=raw.replace('Name: PyVideo\n','Name: Safari亚瑟下载\n').replace('Version: 0.0.3\n','Version: 1.3.1\n');start=raw.index('Description:');end=raw.index('Maintainer:',start);raw=raw[:start]+'''Description: 让Safari获得某些类似亚瑟浏览器的功能，能够在画中画中直接下载影片，或者在网站中采集图片及影片以下载，长按搜索栏或点击画中画中的菜单开始使用\n'''+raw[end:];raw=re.sub(r'^Author: .*$', 'Author: 水甲嫩鸡', raw, flags=re.M);raw=re.sub(r'^Maintainer: .*$', 'Maintainer: 水甲嫩鸡', raw, flags=re.M);raw+='Depiction: file:///Library/Application%20Support/PyVideo/depiction/index.html\n';control.write_text(raw)
+control=STAGE/'DEBIAN/control';raw=control.read_text();raw=raw.replace('Name: PyVideo\n','Name: Safari亚瑟下载\n').replace('Version: 0.0.3\n',f'Version: {VERSION}\n');start=raw.index('Description:');end=raw.index('Maintainer:',start);raw=raw[:start]+'''Description: 让Safari获得某些类似亚瑟浏览器的功能，能够在画中画中直接下载影片，或者在网站中采集图片及影片以下载，长按搜索栏或点击画中画中的菜单开始使用\n'''+raw[end:];raw=re.sub(r'^Author: .*$', 'Author: 水甲嫩鸡', raw, flags=re.M);raw=re.sub(r'^Maintainer: .*$', 'Maintainer: 水甲嫩鸡', raw, flags=re.M);raw+='Depiction: file:///Library/Application%20Support/PyVideo/depiction/index.html\n';control.write_text(raw)
 post=STAGE/'DEBIAN/postinst';text=post.read_text();assert text.endswith('exit 0\n');text=text[:-7]+'''pv_stage=photo-storage-permissions
 for pv_child in image-inbox image-tasks image-media; do
   if [ -d "$pv_data/$pv_child" ]; then
@@ -110,7 +113,7 @@ for original in (ORIG/'rootfs').rglob('*'):
   assert original.read_bytes()==(STAGE/rel).read_bytes(),rel
   unchanged.append(str(rel))
 for script in ['postinst','prerm','postrm']:subprocess.run(['sh','-n',str(STAGE/'DEBIAN'/script)],check=True)
-out=DIST/'Safari-Arthur-Downloads-1.3.1-segment-filter-and-video-frame-iphoneos-arm64e.deb'
+out=DIST/f'Safari-Arthur-Downloads-{VERSION}-storage-recovery-refactor-iphoneos-arm64e.deb'
 # The iOS shared filesystem ignores chmod; archive modes must be explicit.
 modes={}
 for archive,prefix in [('data',''),('control','DEBIAN/')]:

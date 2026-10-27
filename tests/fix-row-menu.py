@@ -1,8 +1,0 @@
-from pathlib import Path
-p=Path('/var/minis/workspace/pyvideo-plus/src/DownloadsUI.m');lines=p.read_text().splitlines();
-for i,line in enumerate(lines):
- if line.startswith('- (UIMenu*)rowMenu:'):
-  lines[i]='''- (UIMenu*)rowMenu:(NSDictionary*)r{NSDictionary *task=r[@"linkedTask"]?:r;__weak typeof(self)w=self;NSMutableArray *items=[NSMutableArray array];BOOL local=PVXTaskHasLocalFile(task);UIAction *export=[UIAction actionWithTitle:@"导出" image:[UIImage systemImageNamed:@"square.and.arrow.up"] identifier:nil handler:^(UIAction*x){[w exportRows:@[task] anchor:nil];}];if(!local)export.attributes=UIMenuElementAttributesDisabled;[items addObject:export];UIAction *del=[UIAction actionWithTitle:@"删除" image:[UIImage systemImageNamed:@"trash"] identifier:nil handler:^(UIAction*x){[w confirmDelete:@[task]];}];del.attributes=UIMenuElementAttributesDestructive;[items addObject:del];[items addObject:[UIAction actionWithTitle:@"重命名" image:[UIImage systemImageNamed:@"pencil"] identifier:nil handler:^(UIAction*x){[w editRows:@[task] field:@"title"];}]];NSString *state=PVXText(task[@"state"]);if([@[@"downloading",@"queued",@"hls",@"checking",@"converting",@"remuxing"] containsObject:state])[items addObject:[UIAction actionWithTitle:@"暂停下载" image:[UIImage systemImageNamed:@"pause.circle"] identifier:nil handler:^(UIAction*x){PVXTaskAction(task,@"pause");}]];else if([state isEqual:@"paused"])[items addObject:[UIAction actionWithTitle:@"继续下载" image:[UIImage systemImageNamed:@"play.circle"] identifier:nil handler:^(UIAction*x){PVXTaskAction(task,@"resume");}]];return [UIMenu menuWithTitle:PVXText(task[@"title"]) children:items];}'''
-  break
-else: raise SystemExit('row menu not found')
-p.write_text('\n'.join(lines)+'\n')

@@ -3,3 +3,12 @@ package/
 dist/
 __pycache__/
 *.pyc
+
+# Device captures and reverse-engineering binaries are external evidence.
+evidence/device-installed/
+evidence/arthur-reference/
+evidence/*.py
+evidence/*-loads.txt
+evidence/*-probe.json
+evidence/*-audit.json
+evidence/*-audit.md

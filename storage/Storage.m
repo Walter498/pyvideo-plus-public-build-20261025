@@ -126,7 +126,6 @@ static NSString *(*Root)(void);
 static NSString *(*Media)(NSString *);
 static BOOL (*Write)(id, NSString *, NSError **);
 static void (*Notify)(NSString *);
-static id (*OldTasks)(id, SEL);
 static BOOL (*OldStart)(id, SEL);
 static void (*OldExport)(id, SEL);
 static void (*OldFinish)(id, SEL, id, BOOL, id, id);
@@ -143,9 +142,6 @@ static void PVXBootLog(NSString *message){fprintf(stderr,"PyVideoStorage: %s\\n"
 static __weak id Worker;
 static dispatch_source_t Timer;
 static int NotificationToken;
-// A getter view only. Never replaces Agent.tasks, never copies task records.
-static _Thread_local void *ViewOwner;
-static _Thread_local void *ViewTasks;
 static _Thread_local void *ProtectedPaths;
 static NSString *const Signal = @"com.crctdd.pyvideo.plus.storage";
 
@@ -153,20 +149,11 @@ static BOOL ValidID(id value) {
     return [value isKindOfClass:NSString.class] && [value length] == 36 &&
         [[NSUUID alloc] initWithUUIDString:value] != nil;
 }
-static NSString *Path(NSString *leaf) { return [Root() stringByAppendingPathComponent:leaf]; }
-static BOOL SafeDirectory(NSString *path) {
-    struct stat s;
-    if (lstat(path.fileSystemRepresentation, &s)) {
-        if (errno != ENOENT || mkdir(path.fileSystemRepresentation, 0700)) return NO;
-        if (lstat(path.fileSystemRepresentation, &s)) return NO;
-    }
-    return S_ISDIR(s.st_mode) && !S_ISLNK(s.st_mode) && s.st_uid == geteuid();
-}
-static void PVXDiagnostic(NSString *name,NSDictionary *value){if(!Write||!name.length)return;NSString *dir=Path(@"plus-diagnostics");if(!SafeDirectory(dir))return;NSMutableDictionary *payload=[value mutableCopy]?:[NSMutableDictionary dictionary];payload[@"updated"] = @(NSDate.date.timeIntervalSince1970);NSString *file=[dir stringByAppendingPathComponent:[name stringByAppendingPathExtension:@"plist"]];Write(payload,file,NULL);}
-static id TasksView(id self, SEL cmd) {
-    if (ViewOwner == (__bridge void *)self && ViewTasks) return (__bridge id)ViewTasks;
-    return OldTasks(self, cmd);
-}
+static NSString *PVXFallbackRoot(void){NSString *home=NSHomeDirectory();return [home stringByAppendingPathComponent:@"Library/Application Support/com.crctdd.pyvideo"];}
+static NSString *Path(NSString *leaf){NSString *root=Root?Root():nil;if(!root.length)root=PVXFallbackRoot();return [root stringByAppendingPathComponent:leaf];}
+static BOOL SafeDirectory(NSString *path){struct stat s;if(lstat(path.fileSystemRepresentation,&s)){if(errno!=ENOENT||mkdir(path.fileSystemRepresentation,0700))return NO;if(lstat(path.fileSystemRepresentation,&s))return NO;}return S_ISDIR(s.st_mode)&&!S_ISLNK(s.st_mode)&&s.st_uid==geteuid();}
+static void PVXBootMark(NSString *stage,NSDictionary *fields){if(!stage.length)return;NSString *dir=Path(@"plus-diagnostics");if(!SafeDirectory(dir))return;NSMutableDictionary *payload=[fields mutableCopy]?:[NSMutableDictionary dictionary];payload[@"stage"]=stage;payload[@"updated"]=@(NSDate.date.timeIntervalSince1970);NSString *file=[dir stringByAppendingPathComponent:@"storage-bootstrap.plist"];[payload writeToFile:file atomically:YES];NSString *stageFile=[dir stringByAppendingPathComponent:[NSString stringWithFormat:@"storage-%@.plist",stage]];[payload writeToFile:stageFile atomically:YES];}
+static void PVXDiagnostic(NSString *name,NSDictionary *value){if(!name.length)return;NSString *dir=Path(@"plus-diagnostics");if(!SafeDirectory(dir))return;NSMutableDictionary *payload=[value mutableCopy]?:[NSMutableDictionary dictionary];payload[@"updated"] = @(NSDate.date.timeIntervalSince1970);NSString *file=[dir stringByAppendingPathComponent:[name stringByAppendingPathExtension:@"plist"]];if(Write)Write(payload,file,NULL);else[payload writeToFile:file atomically:YES];}
 static long long PVXSegmentIndex(NSString *url,NSDictionary *meta){for(NSString *key in @[@"segmentIndex",@"sequence",@"sequenceNumber",@"index",@"number",@"order"]){id value=meta[key];if([value respondsToSelector:@selector(longLongValue)]&&[value longLongValue]>=0)return [value longLongValue];}NSString *stem=url.stringByDeletingPathExtension;long long last=-1;NSUInteger i=0;while(i<stem.length){while(i<stem.length&&![NSCharacterSet.decimalDigitCharacterSet characterIsMember:[stem characterAtIndex:i]])i++;if(i>=stem.length)break;NSUInteger start=i;while(i<stem.length&&[NSCharacterSet.decimalDigitCharacterSet characterIsMember:[stem characterAtIndex:i]])i++;NSString *n=[stem substringWithRange:NSMakeRange(start,i-start)];last=n.longLongValue;}return last;}
 static NSArray *PVXOrderedHLSFiles(NSString *uuid){NSString *dir=Path([NSString stringWithFormat:@"media/%@.hls",uuid]);NSArray *names=[[NSFileManager defaultManager] contentsOfDirectoryAtPath:dir error:nil];NSMutableArray *rows=[NSMutableArray array];for(NSString *name in names){if(!([name hasSuffix:@".ts.plist"]||[name hasSuffix:@".m4s.plist"]||[name hasSuffix:@".mp4.plist"]))continue;NSDictionary *meta=[NSDictionary dictionaryWithContentsOfFile:[dir stringByAppendingPathComponent:name]];NSString *response=meta[@"responseURL"]?:meta[@"url"];if(![response isKindOfClass:NSString.class])continue;NSString *segment=[name substringToIndex:name.length-6],*path=[dir stringByAppendingPathComponent:segment];struct stat st;if(lstat(path.fileSystemRepresentation,&st)||!S_ISREG(st.st_mode)||st.st_size<=0)continue;[rows addObject:@{@"index":@(PVXSegmentIndex(response,meta)),@"url":response,@"path":path,@"name":name,@"bytes":@(st.st_size)}];}[rows sortUsingComparator:^NSComparisonResult(NSDictionary*a,NSDictionary*b){long long x=[a[@"index"] longLongValue],y=[b[@"index"] longLongValue];if(x>=0&&y>=0&&x!=y)return x<y?NSOrderedAscending:NSOrderedDescending;NSComparisonResult u=[a[@"url"] compare:b[@"url"]];return u==NSOrderedSame?[a[@"name"] compare:b[@"name"]]:u;}];return rows;}
 static void PVXFinishRecovery(id agent,NSString*uuid,NSString*temp,BOOL success,NSError*error);
@@ -202,17 +189,11 @@ static void PVXStartAVFoundationExport(id agent,NSString*uuid,NSString*ts,NSInte
 static void PVXStartRecoveryExport(id agent,NSString*uuid,NSString*ts,NSInteger attempt){(void)attempt;
  NSString *temp=Path([NSString stringWithFormat:@"media/%@.recovery.mp4",uuid]);RecoveryExports[uuid]=@YES;dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{NSError *err=nil;BOOL ok=PVXFFmpegRemux(ts,temp,&err);NSString *detail=err.localizedDescription;dispatch_async(dispatch_get_main_queue(),^{if(ok){PVXFinishRecovery(agent,uuid,temp,YES,nil);return;}PVXStartAVFoundationExport(agent,uuid,ts,0,detail);});});
 }
-static void PVXRecoverFailedHLS(id agent,NSDictionary*task){NSString*uuid=task[@"id"];if(!ValidID(uuid)||[RecoveryAttempted containsObject:uuid])return;[RecoveryAttempted addObject:uuid];PVXDiagnostic([NSString stringWithFormat:@"hls-%@-start",uuid],@{@"event":@"recovery-started",@"state":task[@"state"]?:@"",@"error":task[@"error"]?:@""});dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{NSString *playlist=Path([NSString stringWithFormat:@"media/%@.recovery.m3u8",uuid]);NSError *playlistError=nil;if(!PVXBuildLocalHLSPlaylist(uuid,playlist,&playlistError)){dispatch_async(dispatch_get_main_queue(),^{NSMutableDictionary *t=[[[agent tasks] objectForKey:uuid] mutableCopy];if(t){PVXDiagnostic([NSString stringWithFormat:@"hls-%@-playlist",uuid],@{@"event":@"playlist-build-failed",@"error":playlistError.localizedDescription?:@""});t[@"state"]=@"failed";t[@"fileComplete"]=@NO;t[@"error"]=[NSString stringWithFormat:@"HLS 封装失败（清单重建）：%@",playlistError.localizedDescription?:@"无法重建本地清单"];if(Persist)Persist(agent,@selector(persist:),t);Notify(Signal);}});return;}dispatch_async(dispatch_get_main_queue(),^{PVXStartRecoveryExport(agent,uuid,playlist,0);});});}
-static void PVXScanFailedHLS(id agent){for(NSDictionary*t in [[agent tasks] allValues]){NSString *error=[t[@"error"] isKindOfClass:NSString.class]?t[@"error"]:@"";if([t[@"state"] isEqual:@"failed"]&&([error containsString:@"HLS 封装失败"]||[error containsString:@"HLS恢复封装失败"]))PVXRecoverFailedHLS(agent,t);}}
-static void Tick(void) {
-    id agent = Worker;
-    if (agent && [agent workerMode] && [agent reconciled]) { [agent exportReady]; PVXScanFailedHLS(agent); }
-}
-static BOOL Start(id self, SEL cmd) {
-    BOOL result = OldStart(self, cmd);
-    if (result && [self workerMode]) Worker = self;
-    return result;
-}
+static id PVXCurrentAgent(void){if(Worker)return Worker;Class app=NSClassFromString(@"UIApplication");SEL shared=NSSelectorFromString(@"sharedApplication");id application=app&&[app respondsToSelector:shared]?((id(*)(id,SEL))objc_msgSend)(app,shared):nil;id delegate=application&&[application respondsToSelector:@selector(delegate)]?((id(*)(id,SEL))objc_msgSend)(application,@selector(delegate)):nil;Class agentClass=NSClassFromString(@"PVAgent");if(delegate&&agentClass&&[delegate isKindOfClass:agentClass])Worker=delegate;return Worker;}
+static void PVXRecoverFailedHLS(id agent,NSDictionary*task){NSString*uuid=task[@"id"];if(!ValidID(uuid)||[RecoveryAttempted containsObject:uuid])return;[RecoveryAttempted addObject:uuid];PVXDiagnostic([NSString stringWithFormat:@"hls-%@-start",uuid],@{@"event":@"recovery-started",@"state":task[@"state"]?:@"",@"segmentsDone":task[@"segmentsDone"]?:@0,@"segmentsTotal":task[@"segmentsTotal"]?:@0,@"error":task[@"error"]?:@""});dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{NSString *playlist=Path([NSString stringWithFormat:@"media/%@.recovery.m3u8",uuid]);NSError *playlistError=nil;if(!PVXBuildLocalHLSPlaylist(uuid,playlist,&playlistError)){dispatch_async(dispatch_get_main_queue(),^{NSMutableDictionary *t=[[[agent tasks] objectForKey:uuid] mutableCopy];if(t){PVXDiagnostic([NSString stringWithFormat:@"hls-%@-playlist",uuid],@{@"event":@"playlist-build-failed",@"error":playlistError.localizedDescription?:@""});t[@"state"]=@"failed";t[@"fileComplete"]=@NO;t[@"error"]=[NSString stringWithFormat:@"HLS 封装失败（清单重建）：%@",playlistError.localizedDescription?:@"无法重建本地清单"];if(Persist)Persist(agent,@selector(persist:),t);if(Notify)Notify(Signal);}});return;}PVXDiagnostic([NSString stringWithFormat:@"hls-%@-playlist",uuid],@{@"event":@"playlist-built",@"path":playlist,@"bytes":@([[[NSFileManager defaultManager]attributesOfItemAtPath:playlist error:nil][NSFileSize] longLongValue])});dispatch_async(dispatch_get_main_queue(),^{PVXStartRecoveryExport(agent,uuid,playlist,0);});});}
+static void PVXScanFailedHLS(id agent){NSDictionary *tasks=[agent respondsToSelector:@selector(tasks)]?[agent tasks]:nil;if(![tasks isKindOfClass:NSDictionary.class])return;for(NSDictionary*t in tasks.allValues){if(![t isKindOfClass:NSDictionary.class]||![t[@"state"] isEqual:@"failed"]||![t[@"hlsSourceURL"] isKindOfClass:NSString.class])continue;long long done=[t[@"segmentsDone"] longLongValue],total=[t[@"segmentsTotal"] longLongValue];NSString *error=[t[@"error"] isKindOfClass:NSString.class]?t[@"error"]:@"";if(total>0&&done>=total&&([error length]||done==total))PVXRecoverFailedHLS(agent,t);}}
+static void Tick(void){id agent=PVXCurrentAgent();if(!agent){PVXBootMark(@"agent-unavailable",@{});return;}if([agent respondsToSelector:@selector(exportReady)]&&[agent respondsToSelector:@selector(workerMode)]&&[agent workerMode])[agent exportReady];PVXScanFailedHLS(agent);}
+static BOOL Start(id self, SEL cmd){Worker=self;BOOL result=OldStart?OldStart(self,cmd):NO;Worker=self;PVXBootMark(@"worker-started",@{@"result":@(result)});return result;}
 
 // Beta3: foreground system sharing is the sole export entrypoint. Drain old
 // requests without inspecting preferences or ever calling the original exporter.
@@ -249,7 +230,7 @@ static BOOL Remove(id self, SEL cmd, NSString *path, NSError **error) {
     return OldRemove(self, cmd, path, error);
 }
 static void Finish(id self, SEL cmd, id uuid, BOOL success, id error, id assetID) {
-    NSDictionary *task = ValidID(uuid) ? OldTasks(self, @selector(tasks))[uuid] : nil;
+    NSDictionary *task = ValidID(uuid) ? [self tasks][uuid] : nil;
     BOOL eligible = NSThread.isMainThread && success && ![self clearingRequest] &&
         [[self exports] containsObject:uuid] && [task[@"state"] isEqual:@"saving"];
     NSSet *protected = nil;
@@ -281,7 +262,7 @@ static void Finish(id self, SEL cmd, id uuid, BOOL success, id error, id assetID
 }
 static void Delete(id self, SEL cmd, id uuid) {
     OldDelete(self, cmd, uuid);
-    NSDictionary *task = ValidID(uuid) ? OldTasks(self, @selector(tasks))[uuid] : nil;
+    NSDictionary *task = ValidID(uuid) ? [self tasks][uuid] : nil;
     if ([task[@"state"] isEqual:@"deleted"]) {
         NSString *p = Path([NSString stringWithFormat:@"retained/%@.mp4", uuid]);
         unlink(p.fileSystemRepresentation);
@@ -305,7 +286,7 @@ static void (*OldClear)(id, SEL);
 static void Clear(id self, SEL cmd) {
     BOOL wasClearing = [self clearingRequest] != nil;
     OldClear(self, cmd);
-    if (!wasClearing || [self clearingRequest] || [OldTasks(self, @selector(tasks)) count]) return;
+    if (!wasClearing || [self clearingRequest] || [[self tasks] count]) return;
     NSString *dir = Path(@"retained");
     if (!SafeDirectory(dir)) return;
     DIR *d = opendir(dir.fileSystemRepresentation);
@@ -319,84 +300,44 @@ static void Clear(id self, SEL cmd) {
     closedir(d);
 }
 
-static BOOL Signature(Class cls, SEL sel, const char *ret, unsigned count, const char **args) {
-    Method method = class_getInstanceMethod(cls, sel);
-    if (!method || method_getNumberOfArguments(method) != count + 2) return NO;
-    char *type = method_copyReturnType(method);
-    BOOL ok = type && !strcmp(type, ret);
-    free(type);
-    for (unsigned i = 0; ok && i < count + 2; i++) {
-        type = method_copyArgumentType(method, i);
-        const char *expected = i == 0 ? "@" : i == 1 ? ":" : args[i - 2];
-        ok = type && !strcmp(type, expected);
-        free(type);
-    }
-    return ok;
-}
 static BOOL PVXReplaceMethod(Class cls,SEL sel,IMP replacement,IMP *original){Method m=class_getInstanceMethod(cls,sel);if(!m)return NO;IMP old=method_getImplementation(m);if(original)*original=old;method_setImplementation(m,replacement);return YES;}
-static BOOL KnownImage(void) {
-    const struct mach_header_64 *h = (const void *)_dyld_get_image_header(0);
-    // The agent is already identified by process name and the complete ABI
-    // signature gate below. A fixed UUID became stale after every Apple
-    // rebuild/re-sign and silently prevented Storage from ever installing.
-    return h && h->magic == MH_MAGIC_64 && h->filetype == MH_EXECUTE;
-}
 #ifndef PVX_STORAGE_MOCK
 __attribute__((constructor))
 static void Install(void) {
     @autoreleasepool {
+        NSString *process=NSProcessInfo.processInfo.arguments.firstObject.lastPathComponent?:@"";
         PVXBootLog(@"constructor-enter");
-        if (![NSProcessInfo.processInfo.arguments.firstObject.lastPathComponent isEqual:@"PyVideoAgent"] || !KnownImage()) { PVXBootLog(@"gate-process-or-uuid-failed"); return; }
-        Class c = NSClassFromString(@"PVAgent");
-        const char *finishArgs[] = {"@", "B", "@", "@"};
-        const char *one[] = {"@"};
-        const char *removeArgs[] = {"@", "^@"};
-        const char *twoObjects[] = {"@", "@"};
-        // All checks happen before any mutation. Unsupported ABI leaves original intact.
-        if (!c || !Signature(c, @selector(startWorker), "B", 0, NULL) ||
-            !Signature(c, @selector(exportReady), "v", 0, NULL) ||
-            !Signature(c, @selector(pump), "v", 0, NULL) ||
-            !Signature(c, @selector(persist:), "B", 1, one) ||
-            !Signature(c, NSSelectorFromString(@"startTask:hlsURL:"), "v", 2, twoObjects) ||
-            !Signature(c, @selector(tasks), "@", 0, NULL) ||
-            !Signature(c, @selector(workerMode), "B", 0, NULL) ||
-            !Signature(c, @selector(reconciled), "B", 0, NULL) ||
-            !Signature(c, @selector(memoryReady), "B", 0, NULL) ||
-            !Signature(c, @selector(exports), "@", 0, NULL) ||
-            !Signature(c, @selector(clearingRequest), "@", 0, NULL) ||
-            !Signature(c, NSSelectorFromString(@"finishExport:success:error:assetID:"), "v", 4, finishArgs) ||
-            !Signature(c, NSSelectorFromString(@"finishDeletion:"), "v", 1, one) ||
-            !Signature(c, NSSelectorFromString(@"finishClearAll"), "v", 0, NULL) ||
-            !Signature(NSFileManager.class, @selector(removeItemAtPath:error:), "B", 2, removeArgs)) { PVXBootLog(@"gate-agent-abi-failed"); return; }
-        PVXBootLog(@"gate-agent-abi-ok");
+        PVXBootMark(@"constructor",@{ @"process":process, @"pid":@(getpid()) });
+        if (![process isEqualToString:@"PyVideoAgent"]) { PVXBootMark(@"process-rejected",@{ @"process":process }); return; }
+        Class c=NSClassFromString(@"PVAgent");
+        if(!c){PVXBootMark(@"agent-class-missing",@{});return;}
         RecoveryAttempted=[NSMutableSet set];RecoveryExports=[NSMutableDictionary dictionary];
         Persist=(void *)class_getMethodImplementation(c,@selector(persist:));
-        Root = (void *)dlsym(RTLD_DEFAULT, "PVStateDirectory");
-        Media = (void *)dlsym(RTLD_DEFAULT, "PVMediaPath");
-        Write = (void *)dlsym(RTLD_DEFAULT, "PVWrite");
-        Notify = (void *)dlsym(RTLD_DEFAULT, "PVNotify");
-        if (!Root || !Media || !Write || !Notify) { PVXBootLog(@"gate-symbol-lookup-failed"); return; }
-        PVXBootLog(@"gate-symbol-lookup-ok");
-        // These symbols are verified against the original Agent ABI above. Use
-        // runtime replacement directly so installation does not depend on a
-        // substrate compatibility export being available at constructor time.
-        if (!PVXReplaceMethod(c,@selector(tasks),(IMP)TasksView,(IMP *)&OldTasks) ||
-            !PVXReplaceMethod(c,@selector(pump),(IMP)PVXPumpWithConfiguredLimit,(IMP *)&OldPump) ||
-            !PVXReplaceMethod(NSFileManager.class,@selector(removeItemAtPath:error:),(IMP)Remove,(IMP *)&OldRemove) ||
-            !PVXReplaceMethod(c,NSSelectorFromString(@"finishExport:success:error:assetID:"),(IMP)Finish,(IMP *)&OldFinish) ||
-            !PVXReplaceMethod(c,NSSelectorFromString(@"finishDeletion:"),(IMP)Delete,(IMP *)&OldDelete) ||
-            !PVXReplaceMethod(c,NSSelectorFromString(@"finishClearAll"),(IMP)Clear,(IMP *)&OldClear) ||
-            !PVXReplaceMethod(c,@selector(startWorker),(IMP)Start,(IMP *)&OldStart) ||
-            !PVXReplaceMethod(c,@selector(exportReady),(IMP)Export,(IMP *)&OldExport)) { PVXBootLog(@"gate-method-replace-failed"); return; }
-        PVXBootLog(@"gate-method-replace-ok");
-        if (!SafeDirectory(Root())) { PVXBootLog(@"gate-root-directory-failed"); return; }
-        PVXBootLog(@"gate-root-directory-ok");
-        dispatch_async(dispatch_get_main_queue(), ^{
-            notify_register_dispatch(Signal.UTF8String, &NotificationToken, dispatch_get_main_queue(), ^(int token) { (void)token; Tick(); });
-            Timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
-            dispatch_source_set_timer(Timer, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), 2 * NSEC_PER_SEC, NSEC_PER_SEC / 2);
-            dispatch_source_set_event_handler(Timer, ^{ @autoreleasepool { Tick(); } });
+        Root=(void *)dlsym(RTLD_DEFAULT,"PVStateDirectory");
+        Media=(void *)dlsym(RTLD_DEFAULT,"PVMediaPath");
+        Write=(void *)dlsym(RTLD_DEFAULT,"PVWrite");
+        Notify=(void *)dlsym(RTLD_DEFAULT,"PVNotify");
+        PVXBootMark(@"symbols",@{ @"root":@(Root!=NULL), @"media":@(Media!=NULL), @"write":@(Write!=NULL), @"notify":@(Notify!=NULL) });
+        if(!Root||!Media||!Notify){PVXBootLog(@"symbol-lookup-failed");PVXBootMark(@"symbol-lookup-failed",@{});return;}
+        BOOL installed=YES;
+        installed&=PVXReplaceMethod(c,@selector(pump),(IMP)PVXPumpWithConfiguredLimit,(IMP *)&OldPump);
+        installed&=PVXReplaceMethod(NSFileManager.class,@selector(removeItemAtPath:error:),(IMP)Remove,(IMP *)&OldRemove);
+        installed&=PVXReplaceMethod(c,NSSelectorFromString(@"finishExport:success:error:assetID:"),(IMP)Finish,(IMP *)&OldFinish);
+        installed&=PVXReplaceMethod(c,NSSelectorFromString(@"finishDeletion:"),(IMP)Delete,(IMP *)&OldDelete);
+        installed&=PVXReplaceMethod(c,NSSelectorFromString(@"finishClearAll"),(IMP)Clear,(IMP *)&OldClear);
+        installed&=PVXReplaceMethod(c,@selector(startWorker),(IMP)Start,(IMP *)&OldStart);
+        installed&=PVXReplaceMethod(c,@selector(exportReady),(IMP)Export,(IMP *)&OldExport);
+        PVXBootMark(installed?@"method-replace-ok":@"method-replace-failed",@{ @"agent":NSStringFromClass(c)?:@"" });
+        if(!installed){PVXBootLog(@"method-replace-failed");return;}
+        if(!SafeDirectory(Root())){PVXBootMark(@"root-directory-failed",@{ @"root":Root()?:@"" });return;}
+        PVXBootMark(@"installed",@{ @"root":Root()?:@"" });
+        dispatch_async(dispatch_get_main_queue(),^{
+            notify_register_dispatch(Signal.UTF8String,&NotificationToken,dispatch_get_main_queue(),^(int token){(void)token;Tick();});
+            Timer=dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,dispatch_get_main_queue());
+            dispatch_source_set_timer(Timer,dispatch_time(DISPATCH_TIME_NOW,2*NSEC_PER_SEC),2*NSEC_PER_SEC,NSEC_PER_SEC/2);
+            dispatch_source_set_event_handler(Timer,^{@autoreleasepool{Tick();}});
             dispatch_resume(Timer);
+            Tick();
         });
     }
 }
