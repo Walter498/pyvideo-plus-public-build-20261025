@@ -1,5 +1,6 @@
 #import <Foundation/Foundation.h>
 #import "PVXHLSLocalizer.h"
+#import "PVXLibavInput.h"
 #include <stdio.h>
 
 // Thin offline adapter only: all selection, cache lookup and rewriting is production code.
@@ -36,6 +37,8 @@ int main(int argc, const char *argv[]) {
             fprintf(stderr, "Production localizer failed: %s\n", (error.description ?: @"offline violation").UTF8String);
             return 1;
         }
+        result=PVXLibavInput(result,&error);
+        if(!result){fprintf(stderr,"Native input: %s\n",error.description.UTF8String);return 1;}
         // A path, not an encoded URL: subprocess argv preserves spaces; never shell-split it.
         puts(result.path.fileSystemRepresentation);
         return 0;

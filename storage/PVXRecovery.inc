@@ -127,6 +127,7 @@ static void PVXRecoverFailedHLS(id agent,NSDictionary *task) {
         NSError *error=nil;
         PVXHLSLocalizer *localizer=[PVXHLSLocalizer new];
         NSURL *playlist=[localizer localizeTask:job.task rootDirectory:root error:&error];
+        if(playlist)playlist=PVXLibavInput(playlist,&error);
         if(!playlist){
             NSDictionary *details=@{@"stage":@"localize",@"error":error.localizedDescription?:@"HLS 资源闭包失败"};
             dispatch_async(dispatch_get_main_queue(),^{PVXRecoveryFinish(agent,job,temporary,NO,details);});

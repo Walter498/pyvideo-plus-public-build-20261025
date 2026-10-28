@@ -105,6 +105,7 @@ static int PVXRetainDisk(const char *source, const char *dest) {
 #import "PVXHLSManifest.h"
 #import "PVXNativeRemux.h"
 #import "PVXHLSLocalizer.h"
+#import "PVXLibavInput.h"
 #import "PVXMediaValidator.h"
 #import <objc/runtime.h>
 #import <objc/message.h>

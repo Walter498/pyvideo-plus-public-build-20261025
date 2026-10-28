@@ -25,7 +25,7 @@ OUT=$(mktemp -d "${TMPDIR:-/tmp}/pvx-recovery-state.XXXXXX")
 trap 'rm -rf "$OUT"' EXIT HUP INT TERM
 # Storage.m is included once by the test, bringing in the real PVXRecovery.inc.
 set -- "$ROOT/tests/recovery-state-test.m" \
-    "$ROOT/storage/PVXHLSManifest.m" "$ROOT/storage/PVXHLSLocalizer.m" \
+    "$ROOT/storage/PVXHLSManifest.m" "$ROOT/storage/PVXHLSLocalizer.m" "$ROOT/storage/PVXLibavInput.m" \
     "$ROOT/storage/PVXNativeRemux.m" "$ROOT/storage/PVXMediaValidator.m"
 if [ "$(uname -s)" = Darwin ] && [ "$MODE" = auto ]; then
     command -v python3 >/dev/null

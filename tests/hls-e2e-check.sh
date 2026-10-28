@@ -15,7 +15,7 @@ if [ "$(uname -s)" != Darwin ] || [ "$MODE" = --syntax-only ]; then
     test -d "$SDK" || { echo "Missing Apple SDK: $SDK" >&2; exit 2; }
     if ! clang -target arm64-apple-ios15.0 -isysroot "$SDK" -fobjc-arc -fblocks \
         -fsyntax-only -Wall -Wextra -Werror -I "$ROOT/storage" \
-        "$ROOT/tests/hls-e2e-cli.m" "$ROOT/storage/PVXHLSLocalizer.m" \
+        "$ROOT/tests/hls-e2e-cli.m" "$ROOT/storage/PVXHLSLocalizer.m" "$ROOT/storage/PVXLibavInput.m" \
         "$ROOT/storage/PVXHLSManifest.m" >"$WORK/compile.stdout" 2>"$WORK/compile.stderr"; then
         cat "$WORK/compile.stderr" >&2
         exit 1
@@ -28,7 +28,7 @@ if [ "$(uname -s)" != Darwin ] || [ "$MODE" = --syntax-only ]; then
 fi
 if ! xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror \
     -I "$ROOT/storage" "$ROOT/tests/hls-e2e-cli.m" \
-    "$ROOT/storage/PVXHLSLocalizer.m" "$ROOT/storage/PVXHLSManifest.m" \
+    "$ROOT/storage/PVXHLSLocalizer.m" "$ROOT/storage/PVXLibavInput.m" "$ROOT/storage/PVXHLSManifest.m" \
     -framework Foundation -o "$WORK/hls e2e cli" \
     >"$WORK/compile.stdout" 2>"$WORK/compile.stderr"; then
     cat "$WORK/compile.stderr" >&2

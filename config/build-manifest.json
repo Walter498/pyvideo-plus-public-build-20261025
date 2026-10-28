@@ -15,5 +15,5 @@
     "src/PVXDiagnostics.m"
   ],
   "photo_worker": ["worker/main.m"],
-  "storage": ["storage/Storage.m", "storage/PVXHLSManifest.m", "storage/PVXHLSLocalizer.m", "storage/PVXNativeRemux.m", "storage/PVXMediaValidator.m"]
+  "storage": ["storage/Storage.m", "storage/PVXHLSManifest.m", "storage/PVXHLSLocalizer.m", "storage/PVXLibavInput.m", "storage/PVXNativeRemux.m", "storage/PVXMediaValidator.m"]
 }

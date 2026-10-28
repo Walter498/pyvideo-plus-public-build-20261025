@@ -157,9 +157,9 @@ class Regression:
                 uris = re.findall(r'URI="([^"\n]+)"', line) if line.startswith("#") else ([line] if line else [])
                 for uri in uris:
                     parsed = urlsplit(uri)
-                    if parsed.scheme != "file" or parsed.netloc not in ("", "localhost"):
-                        raise AssertionError(f"Nonlocal URI in production result: {uri}")
-                    target = Path(unquote(parsed.path)).resolve(strict=True)
+                    if parsed.scheme or parsed.netloc or not re.fullmatch(r"[A-Za-z0-9_.-]+",uri):
+                        raise AssertionError(f"Native resource must be an ASCII relative leaf: {uri}")
+                    target = (path.parent / uri).resolve(strict=True)
                     target.relative_to(cache.resolve())
                     if target.suffix == ".m3u8":
                         visit(target)
