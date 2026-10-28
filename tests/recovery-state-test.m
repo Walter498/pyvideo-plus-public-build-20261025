@@ -81,7 +81,8 @@ int PVRemuxHLSWithCancel(const char *input, const char *output, char *error,
         NSString *playlist=[NSString stringWithContentsOfFile:
             [NSString stringWithUTF8String:input] encoding:NSUTF8StringEncoding error:NULL];
         CHECK([playlist containsString:@"#EXT-X-ENDLIST"]);
-        CHECK([playlist containsString:@"file:"]);
+        CHECK([playlist containsString:@"pvx-input-"]);
+        CHECK(![playlist containsString:@"file:"]&&! [playlist containsString:@"%20"]);
         atomic_fetch_add(&NativeCalls,1);
         atomic_store(&NativeEntered,1);
         int mode=atomic_load(&NativeMode);

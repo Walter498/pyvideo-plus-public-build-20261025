@@ -91,3 +91,18 @@ NSURL *PVXLibavInput(NSURL *closedPlaylist,NSError **error) {
     if(!leaf){for(NSString *path in job.created)unlink(path.fileSystemRepresentation);return nil;}
     return [NSURL fileURLWithPath:[job.root stringByAppendingPathComponent:leaf]];
 }
+
+void PVXLibavInputCleanup(NSURL *nativePlaylist) {
+    if(!nativePlaylist.isFileURL)return;
+    NSString *leaf=nativePlaylist.lastPathComponent;
+    NSRegularExpression *pattern=[NSRegularExpression regularExpressionWithPattern:@"^pvx-input-([A-Fa-f0-9-]{36})-[0-9]+\\.m3u8$" options:0 error:NULL];
+    NSTextCheckingResult *match=[pattern firstMatchInString:leaf options:0 range:NSMakeRange(0,leaf.length)];
+    if(!match)return;
+    NSString *token=[leaf substringWithRange:[match rangeAtIndex:1]];
+    if(![[NSUUID alloc]initWithUUIDString:token])return;
+    NSString *prefix=[NSString stringWithFormat:@"pvx-input-%@-",token];
+    NSString *root=nativePlaylist.path.stringByDeletingLastPathComponent;
+    for(NSString *name in [[NSFileManager defaultManager]contentsOfDirectoryAtPath:root error:NULL]) {
+        if([name hasPrefix:prefix])unlink([root stringByAppendingPathComponent:name].fileSystemRepresentation);
+    }
+}

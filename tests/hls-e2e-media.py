@@ -6,6 +6,7 @@ Host ffmpeg success is NOT evidence that the original iOS libav remuxer succeeds
 Every subprocess has a 120-second limit and retained command/stdout/stderr files.
 """
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -129,9 +130,15 @@ class Regression:
         for original, number in entries:
             relative = original.relative_to(folder).as_posix()
             remote = urljoin(source, relative)
-            name = f"playlist-{number}.txt" if original.suffix == ".m3u8" else f"resource-{number}.ts"
+            if original.suffix==".m3u8":
+                digest=hashlib.sha256((remote+"|0|-1").encode()).hexdigest()
+                name=f"playlist-{digest}.txt"
+            else:
+                name=f"resource-{number}.ts"
             target = cache / name
             target.write_bytes(original.read_bytes())
+            # Original Agent's playlist cache may have no URL sidecar.
+            if original.suffix==".m3u8":continue
             # Binary Apple plist, not JSON or OpenStep text. Even keys/MAP/audio use exact URLs.
             metadata = {"responseURL": remote, "source": remote}
             with Path(str(target) + ".plist").open("wb") as stream:

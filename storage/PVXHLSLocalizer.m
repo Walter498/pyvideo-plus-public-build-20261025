@@ -1,5 +1,14 @@
 #import "PVXHLSLocalizer.h"
 #import "PVXHLSManifest.h"
+#import <CommonCrypto/CommonDigest.h>
+
+static NSString *PVXOriginalPlaylistLeaf(NSString *uri) {
+    NSData *input=[[uri stringByAppendingString:@"|0|-1"] dataUsingEncoding:NSUTF8StringEncoding];
+    unsigned char digest[CC_SHA256_DIGEST_LENGTH];CC_SHA256(input.bytes,(CC_LONG)input.length,digest);
+    NSMutableString *hex=[NSMutableString string];
+    for(NSUInteger i=0;i<sizeof(digest);i++)[hex appendFormat:@"%02x",digest[i]];
+    return [NSString stringWithFormat:@"playlist-%@.txt",hex];
+}
 #include <sys/stat.h>
 #include <stdlib.h>
 #include <limits.h>
@@ -750,7 +759,13 @@ static BOOL PVXRemote(NSURL *url) {
 }
 
 - (NSURL *)child:(NSString *)uri depth:(NSUInteger)depth error:(NSError **)error {
-    NSDictionary *row = [self resource:uri range:nil offset:0 error:error];
+    NSDictionary *row=nil;
+    NSString *hashed=[self.root stringByAppendingPathComponent:PVXOriginalPlaylistLeaf(uri)];
+    if(!self.index[uri]&&[[NSFileManager defaultManager]fileExistsAtPath:hashed]) {
+        NSString *safe=[self safeFile:hashed error:error];
+        if(!safe)return nil;
+        row=@{@"path":safe,@"meta":@{}};
+    } else row=[self resource:uri range:nil offset:0 error:error];
     if (!row) return nil;
     NSData *data = [self manifestData:row[@"path"] error:error];
     if (!data) return nil;
@@ -791,6 +806,10 @@ static BOOL PVXRemote(NSURL *url) {
         if (rows.count > 1) return PVXFail(error, PVXHLSLocalizerAmbiguousResource,
             @"Multiple cached source manifests", source.absoluteString);
         path = rows.firstObject[@"path"];
+    }
+    if (!text && !path && PVXRemote(source)) {
+        NSString *hashed=[self.root stringByAppendingPathComponent:PVXOriginalPlaylistLeaf(source.absoluteString)];
+        if([[NSFileManager defaultManager]fileExistsAtPath:hashed])path=hashed;
     }
     if (!text && !path) {
         NSMutableArray *originals = [NSMutableArray array];

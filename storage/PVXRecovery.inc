@@ -7,6 +7,7 @@
 @property(nonatomic) BOOL requireAudio;
 @property(atomic) BOOL cancelled;
 @property(nonatomic,strong) PVXNativeRemuxCancellation *cancellation;
+@property(nonatomic,strong) NSURL *nativePlaylist;
 @end
 @implementation PVXRecoveryJob
 @end
@@ -34,6 +35,7 @@ static void PVXRecoveryRecord(id agent,PVXRecoveryJob *job,NSString *stage,NSStr
     if(Notify)Notify(Signal);
 }
 static void PVXRecoveryFinish(id agent,PVXRecoveryJob *job,NSString *temporary,BOOL valid,NSDictionary *details) {
+    if(job.nativePlaylist)PVXLibavInputCleanup(job.nativePlaylist);
     BOOL current=PVXRecoveryCurrent(agent,job);
     if(!current){
         unlink(temporary.fileSystemRepresentation);
@@ -128,6 +130,7 @@ static void PVXRecoverFailedHLS(id agent,NSDictionary *task) {
         PVXHLSLocalizer *localizer=[PVXHLSLocalizer new];
         NSURL *playlist=[localizer localizeTask:job.task rootDirectory:root error:&error];
         if(playlist)playlist=PVXLibavInput(playlist,&error);
+        job.nativePlaylist=playlist;
         if(!playlist){
             NSDictionary *details=@{@"stage":@"localize",@"error":error.localizedDescription?:@"HLS 资源闭包失败"};
             dispatch_async(dispatch_get_main_queue(),^{PVXRecoveryFinish(agent,job,temporary,NO,details);});
@@ -144,7 +147,7 @@ static void PVXRecoverFailedHLS(id agent,NSDictionary *task) {
             current=PVXRecoveryCurrent(agent,job);
             if(current)PVXRecoveryRecord(agent,job,@"remuxing",nil);
         });
-        if(!current){unlink(temporary.fileSystemRepresentation);return;}
+        if(!current){PVXLibavInputCleanup(playlist);unlink(temporary.fileSystemRepresentation);return;}
         NSDictionary *nativeDetails=nil;NSString *nativeError=nil;
         BOOL remuxed=PVXNativeRemuxHLSWithCancellation(playlist.path,temporary,job.cancellation,&nativeDetails,&nativeError);
         NSMutableDictionary *remuxDetails=[nativeDetails mutableCopy]?:[NSMutableDictionary dictionary];
