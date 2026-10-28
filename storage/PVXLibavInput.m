@@ -10,8 +10,11 @@
 @property(nonatomic,strong) NSMutableDictionary *names;
 @property(nonatomic,strong) NSMutableSet *active;
 @property(nonatomic,strong) NSMutableArray *created;
+@property(nonatomic,strong) NSMutableArray *resourceReport;
 - (NSString *)map:(NSURL *)url key:(BOOL)key depth:(NSUInteger)depth error:(NSError **)error;
 @end
+static NSDictionary *PVXLastInputReport;
+NSDictionary *PVXLibavInputLastReport(void) { @synchronized([NSObject class]) { return [PVXLastInputReport copy]; } }
 static id PVXInputFail(NSError **error,NSString *reason) {
     if(error)*error=[NSError errorWithDomain:@"PVXLibavInput" code:1 userInfo:@{NSLocalizedDescriptionKey:reason}];
     return nil;
@@ -99,10 +102,15 @@ static BOOL PVXRepairRepeatedAudioPESFile(NSString *source,NSString *destination
     if(!playlist){
         if(key&&st.st_size!=16)return PVXInputFail(error,@"Native AES key must be exactly 16 bytes");
         BOOL repaired=NO;
+        NSDictionary *side=[NSDictionary dictionaryWithContentsOfFile:[path stringByAppendingString:@".plist"]]?:@{};
+        NSMutableDictionary *entry=[@{@"file":path.lastPathComponent?:@"",@"bytes":@(st.st_size),
+            @"declaredSize":side[@"size"]?:@0,@"declaredSHA256":side[@"sha256"]?:@"",@"key":@(key)} mutableCopy];
         if(!key&&PVXRepairRepeatedAudioPESFile(path,destination,&repaired,error)){
-            [self.created addObject:destination];return leaf;
+            entry[@"repaired"]=@YES;entry[@"output"]=destination.lastPathComponent?:@"";
+            [self.resourceReport addObject:entry];[self.created addObject:destination];return leaf;
         }
         if(repaired)return PVXInputFail(error, @"Cannot publish repaired private TS input");
+        entry[@"repaired"]=@NO;[self.resourceReport addObject:entry];
         unlink(destination.fileSystemRepresentation);
         if(link(path.fileSystemRepresentation,destination.fileSystemRepresentation))
             return PVXInputFail(error,@"Cannot hard-link private native input resource");
@@ -142,8 +150,10 @@ NSURL *PVXLibavInput(NSURL *closedPlaylist,NSError **error) {
         return PVXInputFail(error,@"Native input cache missing");
     PVXFileProtocolInput *job=[PVXFileProtocolInput new];
     job.root=[NSString stringWithUTF8String:root];job.token=NSUUID.UUID.UUIDString;
-    job.names=[NSMutableDictionary dictionary];job.active=[NSMutableSet set];job.created=[NSMutableArray array];
+    job.names=[NSMutableDictionary dictionary];job.active=[NSMutableSet set];job.created=[NSMutableArray array];job.resourceReport=[NSMutableArray array];
     NSString *leaf=[job map:closedPlaylist key:NO depth:0 error:error];
+    NSDictionary *report=@{@"resourceCount":@(job.resourceReport.count),@"repairedCount":@([[job.resourceReport filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"repaired == YES"]] count]),@"resources":job.resourceReport,@"nativePlaylist":leaf?:@"",@"root":job.root?:@""};
+    @synchronized([NSObject class]) { PVXLastInputReport=report; }
     if(!leaf){for(NSString *path in job.created)unlink(path.fileSystemRepresentation);return nil;}
     return [NSURL fileURLWithPath:[job.root stringByAppendingPathComponent:leaf]];
 }
