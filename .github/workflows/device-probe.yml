@@ -1,0 +1,21 @@
+name: Build isolated iOS native probe
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: macos-14
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile production native resolver and closure into isolated probe
+        run: |
+          mkdir -p probe
+          xcrun --sdk iphoneos clang -target arm64e-apple-ios15.0 -dynamiclib -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -Istorage tests/device-native-trial.m storage/PVXHLSLocalizer.m storage/PVXHLSManifest.m storage/PVXLibavInput.m storage/PVXNativeRemux.m -framework Foundation -install_name @rpath/PVXNativeTrial.dylib -o probe/PVXNativeTrial.dylib
+          codesign --force --sign - probe/PVXNativeTrial.dylib
+          shasum -a 256 probe/PVXNativeTrial.dylib
+      - uses: actions/upload-artifact@v4
+        with:
+          name: isolated-native-probe
+          path: probe/PVXNativeTrial.dylib

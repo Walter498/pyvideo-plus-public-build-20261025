@@ -1,7 +1,7 @@
 // Opaque libav API diagnostics only: never assumes AVFormatContext layout.
 static void *PVXAgentExport(const char *name) {
-    (void)dlerror();void *p=dlsym(RTLD_DEFAULT,name);const char *e=dlerror();Dl_info info={0};
-    return !e&&p&&dladdr(p,&info)&&info.dli_fbase==(void *)_dyld_get_image_header(0)?p:NULL;
+    (void)dlerror();void *p=dlsym(RTLD_DEFAULT,name);const char *e=dlerror();
+    return !e&&PVXAgentOwnsExport(p,name)?p:NULL;
 }
 static NSDictionary *PVXInputProbe(const char *path) {
     int (*openInput)(void **,const char *,const void *,void **)=PVXAgentExport("avformat_open_input");

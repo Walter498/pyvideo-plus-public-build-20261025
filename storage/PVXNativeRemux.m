@@ -7,6 +7,7 @@
 #import <unistd.h>
 #import <errno.h>
 #import <time.h>
+#import "PVXAgentIdentity.h"
 
 // x0/x1 paths; x2 error buffer; x3 size_t; x4 int(void *); x5 opaque.
 // Original caller 0x1001a31d0 tests SIGN, not equality to zero.
@@ -36,8 +37,7 @@ static BOOL PVXResolveRemux(void) {
             PVXRemuxLoadError = e ? [NSString stringWithUTF8String:e] : @"PVRemuxHLSWithCancel 未导出";
             return;
         }
-        Dl_info info = {0};
-        if (!dladdr(p, &info) || info.dli_fbase != (void *)_dyld_get_image_header(0)) {
+        if (!PVXAgentOwnsExport(p,"PVRemuxHLSWithCancel")) {
             PVXRemuxLoadError = @"PVRemuxHLSWithCancel 不属于当前主镜像";
             return;
         }
@@ -59,8 +59,8 @@ static pthread_mutex_t *PVXVerifiedSharedMutex(void) {
     dispatch_once(&once, ^{
         (void)dlerror();
         void *p=dlsym(RTLD_DEFAULT,"PVXAgentRemuxMutex");
-        const char *error=dlerror();Dl_info info={0};
-        if(!error&&p&&dladdr(p,&info)&&info.dli_fbase==(void *)_dyld_get_image_header(0))shared=p;
+        const char *error=dlerror();
+        if(!error&&PVXAgentOwnsExport(p,"PVXAgentRemuxMutex"))shared=p;
     });
     return shared;
 #endif
