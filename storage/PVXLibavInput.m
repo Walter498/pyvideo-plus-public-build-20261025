@@ -27,38 +27,43 @@ static NSUInteger PVXPTS(const unsigned char *p) {
 // repeat one AAC PES at a segment start. Repair only that exact local input
 // defect in the private alias tree; never mutate the cached source file and
 // never weaken the Agent's muxer validation.
-static NSData *PVXRepairRepeatedAudioPES(NSData *input, BOOL *changed, NSError **error) {
+static BOOL PVXRepairRepeatedAudioPESFile(NSString *source,NSString *destination,BOOL *changed,NSError **error) {
     (void)error;
-    if (changed) *changed=NO;
-    if (!input.length || input.length%188 || ((const unsigned char *)input.bytes)[0]!=0x47) return nil;
-    const unsigned char *bytes=input.bytes; NSUInteger packets=input.length/188;
+    if(changed)*changed=NO;
+    NSFileHandle *in=[NSFileHandle fileHandleForReadingAtPath:source];
+    if(!in)return NO;
+    [[NSFileManager defaultManager]createFileAtPath:destination contents:nil attributes:@{NSFilePosixPermissions:@0600}];
+    NSFileHandle *out=[NSFileHandle fileHandleForWritingAtPath:destination];
+    if(!out){[in closeFile];return NO;}
     typedef struct { uint64_t previousPTS; BOOL havePTS,drop; } State;
-    State state[8192]; memset(state,0,sizeof(state));
-    NSMutableData *output=[NSMutableData dataWithCapacity:input.length];
-    for(NSUInteger n=0;n<packets;n++) {
-        const unsigned char *packet=bytes+n*188;
-        if(packet[0]!=0x47)return nil;
-        unsigned int pid=((packet[1]&0x1f)<<8)|packet[2];
-        unsigned int adaptation=(packet[3]>>4)&3; BOOL payload=adaptation==1||adaptation==3; BOOL start=(packet[1]&0x40)!=0; NSUInteger offset=4;
-        if(adaptation==3) { if(packet[4]>183)return nil; offset+=1+packet[4]; }
-        if(adaptation==0||adaptation==2)payload=NO;
-        if(start)state[pid].drop=NO;
-        if(payload&&start&&offset+14<=188&&packet[offset]==0&&packet[offset+1]==0&&packet[offset+2]==1) {
-            unsigned char stream=packet[offset+3];
-            if(stream>=0xc0&&stream<=0xdf) {
-                unsigned char flags=packet[offset+7];
-                if(((flags>>6)&2)&&offset+14<=188) {
+    State state[8192];memset(state,0,sizeof(state));BOOL valid=YES;
+    for(;;) {
+        @autoreleasepool {
+            NSData *packetData=[in readDataOfLength:188];
+            if(!packetData.length)break;
+            if(packetData.length!=188){valid=NO;break;}
+            const unsigned char *packet=packetData.bytes;
+            if(packet[0]!=0x47){valid=NO;break;}
+            unsigned int pid=((packet[1]&0x1f)<<8)|packet[2];
+            unsigned int adaptation=(packet[3]>>4)&3;BOOL payload=adaptation==1||adaptation==3;BOOL start=(packet[1]&0x40)!=0;NSUInteger offset=4;
+            if(adaptation==3){if(packet[4]>183){valid=NO;break;}offset+=1+packet[4];}
+            if(adaptation==0||adaptation==2)payload=NO;
+            if(start)state[pid].drop=NO;
+            if(payload&&start&&offset+14<=188&&packet[offset]==0&&packet[offset+1]==0&&packet[offset+2]==1){
+                unsigned char stream=packet[offset+3];
+                if(stream>=0xc0&&stream<=0xdf&&((packet[offset+7]>>6)&2)){
                     uint64_t pts=PVXPTS(packet+offset+9);
-                    if(state[pid].havePTS&&pts<=state[pid].previousPTS) { state[pid].drop=YES;if(changed)*changed=YES; }
-                    else { state[pid].previousPTS=pts;state[pid].havePTS=YES; }
+                    if(state[pid].havePTS&&pts<=state[pid].previousPTS){state[pid].drop=YES;if(changed)*changed=YES;}
+                    else{state[pid].previousPTS=pts;state[pid].havePTS=YES;}
                 }
             }
+            if(!state[pid].drop)[out writeData:packetData];
         }
-        if(state[pid].drop)continue;
-        [output appendBytes:packet length:188];
     }
-    if(changed&&!*changed)return nil;
-    return output;
+    [in closeFile];[out closeFile];
+    if(!valid){unlink(destination.fileSystemRepresentation);return NO;}
+    if(changed&&!*changed){unlink(destination.fileSystemRepresentation);return NO;}
+    return YES;
 }
 
 @implementation PVXFileProtocolInput
@@ -93,12 +98,12 @@ static NSData *PVXRepairRepeatedAudioPES(NSData *input, BOOL *changed, NSError *
     NSString *destination=[self.root stringByAppendingPathComponent:leaf];
     if(!playlist){
         if(key&&st.st_size!=16)return PVXInputFail(error,@"Native AES key must be exactly 16 bytes");
-        NSData *source=[NSData dataWithContentsOfFile:path options:0 error:error];
-        BOOL repaired=NO;NSData *fixed=(!key&&source)?PVXRepairRepeatedAudioPES(source,&repaired,error):nil;
-        if(repaired) {
-            if(![fixed writeToFile:destination options:NSDataWritingAtomic error:error])return nil;
-            chmod(destination.fileSystemRepresentation,0600);[self.created addObject:destination];return leaf;
+        BOOL repaired=NO;
+        if(!key&&PVXRepairRepeatedAudioPESFile(path,destination,&repaired,error)){
+            [self.created addObject:destination];return leaf;
         }
+        if(repaired)return PVXInputFail(error, @"Cannot publish repaired private TS input");
+        unlink(destination.fileSystemRepresentation);
         if(link(path.fileSystemRepresentation,destination.fileSystemRepresentation))
             return PVXInputFail(error,@"Cannot hard-link private native input resource");
         [self.created addObject:destination];return leaf;
