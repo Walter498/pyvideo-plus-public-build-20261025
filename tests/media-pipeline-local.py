@@ -95,7 +95,11 @@ def test_source_guards():
     assert 'PVRemuxHLSWithCancel' in (ROOT/'storage/PVXNativeRemux.m').read_text()
     assert 'recovery-started' in recovery
     assert 'PVXValidateMediaFile' in recovery
-    assert 'if(!self.requested&&NSDate.date.timeIntervalSince1970>=self.retryAfter)' in ui
+    assert 'if((!collect||linked)&&!self.requested&&NSDate.date.timeIntervalSince1970>=self.retryAfter)' in ui
+    assert 'PVXFetchTaskThumbnail(linked?r[@"linkedTask"]:r,' in ui
+    assert 'if(collect&&!self.metadataRequested&&NSDate.date.timeIntervalSince1970>=self.metadataRetryAfter)' in ui
+    assert 'PVXFetchMediaMetadata(r,' in ui
+    assert 'PVXMetadataTakeDelivery(&state,timeout)' in metadata and 'if(manifest)return' not in metadata
     print("PASS source: GET/ImageIO metadata, no-playlist recovery, collection thumbnail trigger")
 
 if __name__ == "__main__":

@@ -24,5 +24,10 @@ def run():
     for x in ['PVXMediaResourceFetch','PVXMediaCookiesForURL','100*1024*1024','Content-Range','AVURLAssetHTTPHeaderFieldsKey','AVMediaTypeVideo']: assert x in m+q
     assert 'requestHeaderFieldsWithCookies' in p and 'PVXPreviewCookie' in p
     assert 'bytes=0-0' in m and 'HTTPMethod=@"HEAD"' not in m
+    assert 'if(manifest)return' not in m and 'PVXMetadataTakeDelivery(&state,timeout)' in m
+    assert 'row[@"poster"]' in m and 'else loadAsset();' in m
+    assert 'PVXPreviewAssetReady' in m and 'PVXMetadataActive<PVXMetadataConcurrencyLimit' in m
+    assert 'if([value[@"thumbnail"] isKindOfClass:UIImage.class]' in m
+    assert '25*NSEC_PER_SEC' in m and 'cancelAllCGImageGeneration' in m
     s.shutdown(); s.server_close(); print('PASS metadata contract: bad HEAD ignored, real GET, strict range, bounded resource, cookie/path/secure filtering, asset headers, video track/thumbnail')
 if __name__=='__main__': run()
