@@ -44,7 +44,9 @@ static void PVXRecoveryFinish(id agent,PVXRecoveryJob *job,NSString *temporary,B
     NSError *publishError=nil;
     if(valid) {
         int fd=open(temporary.fileSystemRepresentation,O_RDONLY|O_NOFOLLOW|O_CLOEXEC);
-        if(fd<0||fsync(fd))valid=NO;
+        if(fd<0||fsync(fd)) {
+            valid=NO;publishError=[NSError errorWithDomain:NSPOSIXErrorDomain code:errno userInfo:nil];
+        }
         if(fd>=0)close(fd);
         if(valid&&rename(temporary.fileSystemRepresentation,destination.fileSystemRepresentation)) {
             valid=NO;
@@ -60,7 +62,6 @@ static void PVXRecoveryFinish(id agent,PVXRecoveryJob *job,NSString *temporary,B
     result[@"nonce"]=job.nonce;
     result[@"version"]=@"1.5.0";
     if(publishError)result[@"error"]=publishError.localizedDescription;
-    PVXDiagnostic([NSString stringWithFormat:@"hls-%@-result",job.uuid],result);
     NSMutableDictionary *live=[[[agent tasks] objectForKey:job.uuid] mutableCopy];
     live[@"pvxRecoveryVersion"]=@"1.5.0";
     live[@"pvxRecoveryStage"]=valid?@"complete":@"failed";
@@ -75,8 +76,8 @@ static void PVXRecoveryFinish(id agent,PVXRecoveryJob *job,NSString *temporary,B
         live[@"engine"]=@"PVXLocalizer+AgentNativeRemux";
         live[@"engineVersion"]=@5;
         for(NSString *key in @[@"error",@"networkErrorCode",@"networkErrorDomain",@"validationIssue"])[live removeObjectForKey:key];
-        if(details[@"width"])live[@"width"]=details[@"width"];
-        if(details[@"height"])live[@"height"]=details[@"height"];
+        if(details[@"videoWidth"])live[@"width"]=details[@"videoWidth"];
+        if(details[@"videoHeight"])live[@"height"]=details[@"videoHeight"];
         if(details[@"duration"])live[@"duration"]=details[@"duration"];
     } else {
         live[@"state"]=@"failed";
@@ -85,7 +86,15 @@ static void PVXRecoveryFinish(id agent,PVXRecoveryJob *job,NSString *temporary,B
         unlink(temporary.fileSystemRepresentation);
     }
     [[agent tasks] setObject:live forKey:job.uuid];
-    if(Persist)Persist(agent,@selector(persist:),live);
+    BOOL persisted=Persist&&Persist(agent,@selector(persist:),live);
+    result[@"taskPersisted"]=@(persisted);
+    if(valid&&!persisted){
+        live[@"state"]=@"failed";live[@"fileComplete"]=@NO;
+        live[@"error"]=@"MP4 已校验并保留，但任务状态写入失败";
+        [[agent tasks] setObject:live forKey:job.uuid];
+        result[@"event"]=@"output-valid-state-write-failed";
+    }
+    PVXDiagnostic([NSString stringWithFormat:@"hls-%@-result",job.uuid],result);
     [RecoveryExports removeObjectForKey:job.uuid];
     if(Notify)Notify(Signal);
 }

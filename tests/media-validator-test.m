@@ -71,5 +71,6 @@ int main(int argc, const char *argv[]) {
         });
         dispatch_async(dispatch_get_main_queue(), ^{ RunNext(); });
     }
-    dispatch_main();
+    CFRunLoopRun();
+    return 0;
 }

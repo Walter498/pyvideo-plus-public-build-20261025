@@ -31,6 +31,9 @@ jobs:
       - name: Decode actual MP4 samples using production validator
         if: ${{ !cancelled() }}
         run: sh tests/media-validator-check.sh
+      - name: Test production recovery cancellation retry and atomic publication
+        if: ${{ !cancelled() }}
+        run: sh tests/recovery-state-check.sh
       - name: Build true arm64e using Apple compiler and linker
         if: ${{ !cancelled() }}
         run: python3 build-macos.py
