@@ -65,6 +65,9 @@ static BOOL PVXRepairRepeatedAudioPESInner(NSString *source,NSString *destinatio
         if(!count||!rate)continue;first=(b[7]&0x80)?PVXPTS(b+9):0;uint64_t step=(uint64_t)1024*90000/rate;uint64_t last=first+(uint64_t)(count-1)*step;
         if(havePrevious&&first<=previousLast&&count>1){
             unsigned char *m=d.mutableBytes;memmove(m+header,m+header+frameLen,end-header-frameLen);memset(m+end-frameLen,0xff,frameLen);
+            unsigned char flags=m[7];
+            if(flags&0x80){uint64_t t=PVXPTS(m+9)+step;m[9]=(unsigned char)(0x20|(((t>>30)&7)<<1)|1);m[10]=(t>>22)&0xff;m[11]=(unsigned char)((((t>>15)&0x7f)<<1)|1);m[12]=(t>>7)&0xff;m[13]=(unsigned char)(((t&0x7f)<<1)|1);}
+            if((flags&0xc0)==0xc0){uint64_t t=PVXPTS(m+14)+step;m[14]=(unsigned char)(0x10|(((t>>30)&7)<<1)|1);m[15]=(t>>22)&0xff;m[16]=(unsigned char)((((t>>15)&0x7f)<<1)|1);m[17]=(t>>7)&0xff;m[18]=(unsigned char)(((t&0x7f)<<1)|1);}
             if(declared>=frameLen){NSUInteger newLen=declared-frameLen;m[4]=(newLen>>8)&255;m[5]=newLen&255;}
             record[@"repaired"]=[@YES copy];repaired++;count--;last=first+(uint64_t)(count-1)*step;
         }
