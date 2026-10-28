@@ -94,8 +94,10 @@ def test_source_guards():
     recovery=(ROOT/'storage/PVXRecovery.inc').read_text()
     assert 'PVRemuxHLSWithCancel' in (ROOT/'storage/PVXNativeRemux.m').read_text()
     assert 'recovery-started' in recovery
-    assert 'PVXValidateMediaFile' in recovery
-    assert 'if((!collect||linked)&&!self.requested&&NSDate.date.timeIntervalSince1970>=self.retryAfter)' in ui
+    libav_input=(ROOT/'storage/PVXLibavInput.m').read_text()
+    assert 'PVXRepairRepeatedAudioPES' in libav_input
+    assert 'Native input resource escapes task cache' in libav_input
+    assert 'sharedLockVerified' in (ROOT/'storage/PVXNativeRemux.m').read_text()
     assert 'PVXFetchTaskThumbnail(linked?r[@"linkedTask"]:r,' in ui
     assert 'if(collect&&!self.metadataRequested&&NSDate.date.timeIntervalSince1970>=self.metadataRetryAfter)' in ui
     assert 'PVXFetchMediaMetadata(r,' in ui

@@ -1,6 +1,6 @@
-# Safari Arthur Downloads 1.5.1 — 原生封装重构
+# Safari Arthur Downloads 2.0.0 — 原生封装重构
 
-当前分支：`media-fix-1.5.1`。实际生产源码版本与 SHA-256 由 `build/cloud-build.json` 的 `_source` 字段记录；打包时验证同一组生产输入，拒绝混用旧产物。
+当前分支：`media-fix-2.0.0`。实际生产源码版本与 SHA-256 由 `build/cloud-build.json` 的 `_source` 字段记录；打包时验证同一组生产输入，拒绝混用旧产物。
 
 ## 1. Apple macOS / Xcode 编译
 
@@ -63,10 +63,10 @@ sh tests/export-beta3-check.sh
 ```sh
 export PYVIDEO_BASE_PAYLOAD=/path/to/pyvideo-0.0.3-analysis
 python3 package.py
-ls -lh dist/Safari-Arthur-Downloads-1.5.1-storage-recovery-refactor-iphoneos-arm64e.deb
+ls -lh dist/Safari-Arthur-Downloads-2.0.0-storage-recovery-refactor-iphoneos-arm64e.deb
 cat dist/manifest.json
 python3 tests/verify-install-package.py \
-  dist/Safari-Arthur-Downloads-1.5.1-storage-recovery-refactor-iphoneos-arm64e.deb \
+  dist/Safari-Arthur-Downloads-2.0.0-storage-recovery-refactor-iphoneos-arm64e.deb \
   dist/manifest.json \
   "$PYVIDEO_BASE_PAYLOAD/rootfs/Applications/PyVideoAgent.app/PyVideoAgent"
 ```
@@ -84,7 +84,7 @@ build/PyVideoStorage.dylib
 
 ## 5. 当前修复内容
 
-1.5.1 补丁：精确移除真实缓存的 `#EXT-X-TOKEN=…` 私有标记，补齐冒号/等号回归；脱敏记录解析错误标记名。列表封面不再因 HLS 清单探测提前结束，支持关联海报、真实视频抽帧和就绪预览资产复用；无缩略图结果不作成功缓存。删除图标/网格模式并迁移旧偏好，保留全部列表操作。
+2.0.0 补丁：精确移除真实缓存的 `#EXT-X-TOKEN=…` 私有标记，补齐冒号/等号回归；脱敏记录解析错误标记名。列表封面不再因 HLS 清单探测提前结束，支持关联海报、真实视频抽帧和就绪预览资产复用；无缩略图结果不作成功缓存。删除图标/网格模式并迁移旧偏好，保留全部列表操作。
 
 ```sh
 python3 tests/ui-list-regression.py
