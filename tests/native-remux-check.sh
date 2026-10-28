@@ -10,6 +10,8 @@ trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 CC=$(xcrun --find clang)
 SDKROOT=$(xcrun --sdk macosx --show-sdk-path)
 export SDKROOT
+"$CC" -fobjc-arc -Wall -Wextra -Werror -I"$ROOT/storage" "$ROOT/tests/native-agent-identity.m" -framework Foundation -o "$TMP/identity"
+"$TMP/identity"
 # All executables compile the production .m, not a replacement implementation.
 "$CC" -fobjc-arc -fblocks -Wall -Wextra -Werror -DPVX_NATIVE_REMUX_TESTING=1 \
     -I"$ROOT/storage" "$ROOT/storage/PVXNativeRemux.m" "$ROOT/tests/native-remux-adapter.m" \
