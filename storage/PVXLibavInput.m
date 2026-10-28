@@ -38,7 +38,7 @@ static BOOL PVXADTS(const unsigned char *p,NSUInteger available,NSUInteger *leng
     NSUInteger header=(p[1]&1)?7:9;if(n<header||n>available)return NO;
     if(length)*length=n;if(rate)*rate=rates[index];return YES;
 }
-static BOOL PVXRepairRepeatedAudioPESFile(NSString *source,NSString *destination,BOOL *changed,NSError **error) {
+static BOOL PVXRepairRepeatedAudioPESInner(NSString *source,NSString *destination,BOOL *changed,NSError **error) {
     (void)error;if(changed)*changed=NO;
     NSData *input=[NSData dataWithContentsOfFile:source options:0 error:error];
     if(!input.length||input.length%188)return NO;
@@ -62,7 +62,7 @@ static BOOL PVXRepairRepeatedAudioPESFile(NSString *source,NSString *destination
         NSUInteger header=9+b[8];NSUInteger declared=((NSUInteger)b[4]<<8)|b[5];NSUInteger end=declared?MIN(d.length,6+declared):d.length;
         if(header>=end)continue;NSUInteger pos=header,count=0,frameLen=0,rate=0;uint64_t first=0;
         while(pos+7<=end){NSUInteger nlen=0,nrate=0;if(!PVXADTS(b+pos,end-pos,&nlen,&nrate))break;if(!count)frameLen=nlen,rate=nrate;count++;pos+=nlen;}
-        if(!count||!rate)continue;first=PVXPTS(b+header-5);uint64_t step=(uint64_t)1024*90000/rate;uint64_t last=first+(uint64_t)(count-1)*step;
+        if(!count||!rate)continue;first=(b[7]&0x80)?PVXPTS(b+9):0;uint64_t step=(uint64_t)1024*90000/rate;uint64_t last=first+(uint64_t)(count-1)*step;
         if(havePrevious&&first<=previousLast&&count>1){
             unsigned char *m=d.mutableBytes;memmove(m+header,m+header+frameLen,end-header-frameLen);memset(m+end-frameLen,0xff,frameLen);
             if(declared>=frameLen){NSUInteger newLen=declared-frameLen;m[4]=(newLen>>8)&255;m[5]=newLen&255;}
@@ -74,6 +74,11 @@ static BOOL PVXRepairRepeatedAudioPESFile(NSString *source,NSString *destination
     for(NSMutableDictionary *record in records){if(![record[@"repaired"] boolValue])continue;NSMutableData *d=record[@"data"],*locations=record[@"map"];const uint32_t *loc=locations.bytes;const unsigned char *val=d.bytes;for(NSUInteger i=0;i<MIN(d.length,locations.length/sizeof(uint32_t));i++)[(NSMutableData*)output replaceBytesInRange:NSMakeRange(loc[i],1) withBytes:val+i];}
     if(![output writeToFile:destination options:NSDataWritingAtomic error:error])return NO;
     chmod(destination.fileSystemRepresentation,0600);if(changed)*changed=YES;return YES;
+}
+static BOOL PVXRepairRepeatedAudioPESFile(NSString *source,NSString *destination,BOOL *changed,NSError **error) {
+    @autoreleasepool {
+        return PVXRepairRepeatedAudioPESInner(source,destination,changed,error);
+    }
 }
 
 @implementation PVXFileProtocolInput
