@@ -169,7 +169,7 @@ static void RunReady(BOOL retry) {
     NSUInteger before=RawDownloadCalls;
     if (retry) CHECK(PVXControlRecovery(Agent,NULL,@"retry",CurrentID));
     else { Tick(); CHECK([RecoveryAttempted containsObject:CurrentID]); }
-    CHECK([Agent.tasks[CurrentID][@"state"] isEqual:@"remuxing"]);
+    CHECK([Agent.tasks[CurrentID][@"state"] isEqual:@"paused"]&&[Agent.tasks[CurrentID][@"pvxRecoveryActive"] boolValue]);
     CHECK(RawDownloadCalls==before);
     Wait(@"ready after real validator",^{return [Agent.tasks[CurrentID][@"state"] isEqual:@"ready"];},^{
         CheckReady(); CHECK(RawDownloadCalls==before); NextCase();
@@ -192,7 +192,7 @@ static void RunCancel(BOOL deletion) {
     Prepare(2,@"valid.mp4",NO); [NeverReady addObject:CurrentID];
     PVXRecoverFailedHLS(Agent,Agent.tasks[CurrentID]);
     Wait(@"native work entered",^{return (BOOL)(atomic_load(&NativeEntered)!=0);},^{
-        CHECK([Agent.tasks[CurrentID][@"state"] isEqual:@"remuxing"]);
+        CHECK([Agent.tasks[CurrentID][@"state"] isEqual:@"paused"]&&[Agent.tasks[CurrentID][@"pvxRecoveryActive"] boolValue]);
         CHECK(PVXControlRecovery(Agent,NULL,deletion?@"delete":@"pause",CurrentID));
         NSString *state=deletion?@"deleted":@"paused";
         Wait(@"actual native cancellation",^{return (BOOL)(atomic_load(&CancelObserved)!=0);},^{
@@ -210,7 +210,7 @@ static void RunRequeued(void) {
     Prepare(0,@"valid.mp4",NO);
     Agent.tasks[CurrentID][@"state"]=@"queued";
     PVXStartTaskRecovery(Agent,NULL,Agent.tasks[CurrentID],nil);
-    CHECK([Agent.tasks[CurrentID][@"state"] isEqual:@"remuxing"]);
+    CHECK([Agent.tasks[CurrentID][@"state"] isEqual:@"paused"]&&[Agent.tasks[CurrentID][@"pvxRecoveryActive"] boolValue]);
     Wait(@"requeued completed HLS stays offline",^{return [Agent.tasks[CurrentID][@"state"] isEqual:@"ready"];},^{
         CheckReady();CHECK(RawDownloadCalls==0);NextCase();
     });
