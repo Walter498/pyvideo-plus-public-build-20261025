@@ -367,6 +367,22 @@ static void RootAdapter(void) {
 }
 
 static void CachedRedirectAndPrivateTag(void) {
+    Fresh();
+    NSString *captured=[NSString stringWithContentsOfFile:@"tests/fixtures/device-hls-token-equals.m3u8"
+        encoding:NSUTF8StringEncoding error:NULL];
+    CHECK(captured.length>0,@"sanitized captured cache fixture exists");
+    Text(@"playlist-device.txt",captured);
+    Sidecar(@"playlist-device.txt",source,nil);
+    for(NSUInteger i=0;i<3;i++) {
+        NSString *file=[NSString stringWithFormat:@"resource-%lu.ts",(unsigned long)i];
+        Bytes(file,188);
+        Sidecar(file,[NSString stringWithFormat:@"https://cdn.example/path/video%lu.jpeg",(unsigned long)i],nil);
+    }
+    NSURL *capturedResult=Build(@{@"hlsSourceURL":source});
+    CHECK(![Read(capturedResult) containsString:@"#EXT-X-TOKEN"],@"captured equals token stripped");
+    CHECK(fabs([localizer.summary[@"expectedDuration"] doubleValue]-12.012)<0.000001,@"captured real durations kept");
+    CHECK([localizer.summary[@"segmentCount"] unsignedIntegerValue]==3,@"captured resource count kept");
+    Closed(capturedResult);
     Fresh();Bytes(@"segment",188);
     Sidecar(@"segment",@"https://cdn2.example/dir/part.ts",nil);
     Text(@"playlist-root.txt",@"#EXTM3U\n#EXTINF:2,\npart.ts\n#EXT-X-ENDLIST\n");
