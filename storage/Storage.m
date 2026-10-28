@@ -298,6 +298,7 @@ static void Install(void) {
         if(!Root||!Media||!Notify){PVXBootLog(@"symbol-lookup-failed");PVXBootMark(@"symbol-lookup-failed",@{});return;}
         BOOL installed=YES;
         installed&=PVXReplaceMethod(c,@selector(pump),(IMP)PVXPumpWithConfiguredLimit,(IMP *)&OldPump);
+        installed&=PVXReplaceMethod(c,NSSelectorFromString(@"startTask:hlsURL:"),(IMP)PVXStartTaskRecovery,(IMP *)&OldStartTask);
         installed&=PVXReplaceMethod(c,NSSelectorFromString(@"control:target:"),(IMP)PVXControlRecovery,(IMP *)&OldControl);
         installed&=PVXReplaceMethod(NSFileManager.class,@selector(removeItemAtPath:error:),(IMP)Remove,(IMP *)&OldRemove);
         installed&=PVXReplaceMethod(c,NSSelectorFromString(@"finishExport:success:error:assetID:"),(IMP)Finish,(IMP *)&OldFinish);

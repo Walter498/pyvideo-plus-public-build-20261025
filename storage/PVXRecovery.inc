@@ -194,3 +194,15 @@ static BOOL PVXControlRecovery(id agent,SEL selector,id action,id uuid) {
     }
     return OldControl(agent,selector,action,uuid);
 }
+
+// Original startWorker reconciles interrupted remuxing tasks back to queued.
+// Preserve complete fragments across process restart: do not enter network job.
+static void (*OldStartTask)(id,SEL,id,id);
+static void PVXStartTaskRecovery(id agent,SEL selector,NSDictionary *task,id hlsURL) {
+    if(PVXCompletedHLS(task)&&![task[@"fileComplete"] boolValue]&&
+       [task[@"state"] isEqual:@"queued"]&&![agent clearingRequest]) {
+        PVXRecoverFailedHLS(agent,task);
+        return;
+    }
+    if(OldStartTask)OldStartTask(agent,selector,task,hlsURL);
+}

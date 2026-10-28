@@ -206,6 +206,15 @@ static void RunCancel(BOOL deletion) {
         });
     });
 }
+static void RunRequeued(void) {
+    Prepare(0,@"valid.mp4",NO);
+    Agent.tasks[CurrentID][@"state"]=@"queued";
+    PVXStartTaskRecovery(Agent,NULL,Agent.tasks[CurrentID],nil);
+    CHECK([Agent.tasks[CurrentID][@"state"] isEqual:@"remuxing"]);
+    Wait(@"requeued completed HLS stays offline",^{return [Agent.tasks[CurrentID][@"state"] isEqual:@"ready"];},^{
+        CheckReady();CHECK(RawDownloadCalls==0);NextCase();
+    });
+}
 static void NextCase(void) {
     switch(Cases) {
         case 0: RunReady(NO); break;
@@ -214,9 +223,10 @@ static void NextCase(void) {
         case 3: RunCancel(YES); break;
         case 4: RunReady(YES); break;
         case 5: RunFailure(YES); break;
+        case 6: RunRequeued(); break;
         default:
-            CHECK(atomic_load(&NativeCalls)==6 && PersistCalls>6 && RawDownloadCalls==0);
-            printf("PASS fake-remux: 6 production recovery lifecycle cases; real AVFoundation 3-frame + audio decode, cancellation, retry routing, atomic publication and failed-validation preservation. NOT proof of original iOS libav success.\n");
+            CHECK(atomic_load(&NativeCalls)==7 && PersistCalls>7 && RawDownloadCalls==0);
+            printf("PASS fake-remux: 7 production recovery lifecycle cases; real AVFoundation 3-frame + audio decode, cancellation, retry routing, atomic publication and failed-validation preservation. NOT proof of original iOS libav success.\n");
             exit(0);
     }
 }
