@@ -28,6 +28,7 @@ static NSUInteger PVXPTS(const unsigned char *p) {
 // defect in the private alias tree; never mutate the cached source file and
 // never weaken the Agent's muxer validation.
 static NSData *PVXRepairRepeatedAudioPES(NSData *input, BOOL *changed, NSError **error) {
+    (void)error;
     if (changed) *changed=NO;
     if (!input.length || input.length%188 || ((const unsigned char *)input.bytes)[0]!=0x47) return nil;
     const unsigned char *bytes=input.bytes; NSUInteger packets=input.length/188;
