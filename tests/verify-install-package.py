@@ -1,6 +1,6 @@
 """Validate an actual final Debian archive, not only staging files."""
 from pathlib import Path
-import sys,io,tarfile,json,hashlib,struct
+import sys,io,tarfile,json,hashlib,struct,re
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from tools.agent_exports import BASE_SHA,verify_signed_contract
 
@@ -36,7 +36,10 @@ def verify(path,manifest_path,base_path):
     contract=verify_signed_contract(files[agent],original);assert modes[agent]==0o755
     with tarfile.open(fileobj=io.BytesIO(ar['control.tar.xz'])) as tf:
         control=tf.extractfile('./control').read().decode()
-        assert 'Package: com.crctdd.pyvideo\n' in control and 'Version: 1.5.0\n' in control
+        version=re.search(r'#define PVX_VERSION @"([0-9]+\.[0-9]+\.[0-9]+)"',
+            (Path(__file__).resolve().parents[1]/'src/PVXCommon.h').read_text())[1]
+        assert 'Package: com.crctdd.pyvideo\n' in control and f'Version: {version}\n' in control
+        assert manifest['name']==f'Safari-Arthur-Downloads-{version}-storage-recovery-refactor-iphoneos-arm64e.deb'
     print(json.dumps({'archiveVerified':True,'bytes':len(data),'files':len(files),**contract},indent=2))
 
 if __name__=='__main__':
