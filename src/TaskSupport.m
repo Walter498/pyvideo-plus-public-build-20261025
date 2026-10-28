@@ -520,8 +520,11 @@ void PVXSetParallelLimit(NSInteger limit){NSInteger n=MIN(15,MAX(1,limit));[NSUs
 void PVXCreateDownloadFolder(NSString *name,void(^completion)(BOOL,NSString*)){NSString *safe=PVXSafeText(name,80);BOOL valid=safe.length&&[safe rangeOfCharacterFromSet:[NSCharacterSet characterSetWithCharactersInString:@"/\\:"]].location==NSNotFound;dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{NSString *root=PVXRoot();NSError *error=nil;BOOL ok=valid&&root&&[NSFileManager.defaultManager createDirectoryAtPath:[root stringByAppendingPathComponent:[NSString stringWithFormat:@"files/%@",safe]] withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0700} error:&error];dispatch_async(dispatch_get_main_queue(),^{if(completion)completion(ok,error.localizedDescription);});});}
 NSDictionary *PVXTaskPresentation(NSDictionary *task) {
     NSString *state = PVXSafeText(task[@"state"], 40);
+    BOOL recoveryActive=[task[@"pvxRecoveryActive"] boolValue];
+    NSString *recoveryStage=PVXSafeText(task[@"pvxRecoveryStage"],40);
+    if(recoveryActive&&[@[@"localizing",@"remuxing",@"validating"] containsObject:recoveryStage])state=recoveryStage;
     BOOL local = PVXTaskHasLocalFile(task), complete = PVXComplete(task);
-    NSDictionary *names = @{@"submitted":@"请求已排队 · 等待服务接收", @"serviceUnavailable":@"下载服务未响应（超过15秒）", @"queued":@"等待下载", @"downloading":@"下载中", @"hls":@"下载中", @"remuxing":@"正在封装", @"checking":@"校验中", @"converting":@"转换中", @"ready":@"下载完成", @"saved":@"下载完成", @"completed":@"下载完成", @"albumFailed":@"下载完成", @"uncertain":@"下载完成", @"failed":@"下载失败", @"pausing":@"正在暂停", @"paused":@"已暂停", @"deleting":@"正在删除", @"saving":@"正在处理"};
+    NSDictionary *names = @{@"submitted":@"请求已排队 · 等待服务接收", @"serviceUnavailable":@"下载服务未响应（超过15秒）", @"queued":@"等待下载", @"downloading":@"下载中", @"hls":@"下载中", @"remuxing":@"正在封装", @"localizing":@"准备封装", @"validating":@"校验输出", @"checking":@"校验中", @"converting":@"转换中", @"ready":@"下载完成", @"saved":@"下载完成", @"completed":@"下载完成", @"albumFailed":@"下载完成", @"uncertain":@"下载完成", @"failed":@"下载失败", @"pausing":@"正在暂停", @"paused":@"已暂停", @"deleting":@"正在删除", @"saving":@"正在处理"};
     NSString *status = complete && !local ? @"本地原文件缺失 · 需重新下载" : names[state] ?: @"等待处理";if([state isEqual:@"failed"]&&PVXSafeText(task[@"error"],240).length)status=[NSString stringWithFormat:@"下载失败：%@",PVXSafeText(task[@"error"],240)];
     BOOL success = complete && local;
     BOOL fail = [@[@"failed", @"serviceUnavailable"] containsObject:state] || (complete && !local);

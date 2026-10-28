@@ -94,6 +94,9 @@ def test_source_guards():
     recovery=(ROOT/'storage/PVXRecovery.inc').read_text()
     assert 'PVRemuxHLSWithCancel' in (ROOT/'storage/PVXNativeRemux.m').read_text()
     assert 'recovery-started' in recovery
+    assert 'pvxRecoveryActive' in recovery and 'PVXRecoveryHeartbeat' in recovery
+    assert 'live[@"state"]=@"paused";' in recovery
+    assert 'if(job&&[action isEqual:@"resume"])return YES;' in recovery
     libav_input=(ROOT/'storage/PVXLibavInput.m').read_text()
     assert 'PVXRepairRepeatedAudioPES' in libav_input
     assert 'Native input resource escapes task cache' in libav_input
