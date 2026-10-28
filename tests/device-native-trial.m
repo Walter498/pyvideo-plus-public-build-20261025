@@ -13,7 +13,7 @@ __attribute__((constructor)) static void Trial(void) {
     @autoreleasepool {
         NSString *dir=[NSString stringWithUTF8String:root];
         NSError *error=nil;PVXHLSLocalizer *localizer=[PVXHLSLocalizer new];
-        NSURL *playlist=[localizer localizeTask:@{} cacheDirectory:[NSURL fileURLWithPath:dir] error:&error];
+        NSString *src=[NSString stringWithUTF8String:getenv("PVX_TRIAL_SOURCE")?:""];NSDictionary *task=src.length?@{@"hlsSourceURL":src}:@{};NSURL *playlist=[localizer localizeTask:task cacheDirectory:[NSURL fileURLWithPath:dir] error:&error];
         if(playlist)playlist=PVXLibavInput(playlist,&error);
         NSDictionary *diagnostic=nil;NSString *failure=nil;
         NSString *output=[dir stringByAppendingPathComponent:@"native-trial.mp4"];
