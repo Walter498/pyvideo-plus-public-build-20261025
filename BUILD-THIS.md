@@ -1,7 +1,6 @@
-# Safari Arthur Downloads — 当前可编译源码包
+# Safari Arthur Downloads 1.5.0 — 原生封装重构
 
-源码基线：当前分支 `83491e9efcbd9e0cc284e9910b68887bdd8daeec`
-工作区包含该提交之后的当前媒体元数据、统一资源加载器、构建清单和打包脚本修改。
+当前分支：`media-fix-1.5.0`。实际生产源码版本与 SHA-256 由 `build/cloud-build.json` 的 `_source` 字段记录；打包时验证同一组生产输入，拒绝混用旧产物。
 
 ## 1. Apple macOS / Xcode 编译
 
@@ -58,21 +57,18 @@ sh tests/export-beta3-check.sh
 
 ## 4. 重新打包 Debian/安装包
 
-`package.py` 需要原始基线和亚瑟 FFmpeg Framework 来源：
-
-```text
-/var/minis/workspace/pyvideo-0.0.3-analysis
-/var/minis/workspace/yase-25.3/Payload/YSBrowser.app/Frameworks
-```
-
-准备好上述目录后，可通过环境变量覆盖默认路径：
+仅需要哈希锁定的原始 PyVideo 0.0.3 基线，不需要亚瑟 Framework。
+原 Agent 内已静态链接真正的 arm64e libav；打包只为其已验证的现有互斥导出别名，不转换架构或复制外接 FFmpegKit。
 
 ```sh
 export PYVIDEO_BASE_PAYLOAD=/path/to/pyvideo-0.0.3-analysis
-export PYVIDEO_FFMPEG_ROOT=/path/to/YSBrowser.app/Frameworks
 python3 package.py
-ls -lh dist/Safari-Arthur-Downloads-1.4.0-storage-recovery-refactor-iphoneos-arm64e.deb
+ls -lh dist/Safari-Arthur-Downloads-1.5.0-storage-recovery-refactor-iphoneos-arm64e.deb
 cat dist/manifest.json
+python3 tests/verify-install-package.py \
+  dist/Safari-Arthur-Downloads-1.5.0-storage-recovery-refactor-iphoneos-arm64e.deb \
+  dist/manifest.json \
+  "$PYVIDEO_BASE_PAYLOAD/rootfs/Applications/PyVideoAgent.app/PyVideoAgent"
 ```
 
 当前 `package.py` 会读取：
@@ -96,22 +92,32 @@ build/PyVideoStorage.dylib
 - 统一 Cookie、Referer、User-Agent；
 - 去除重复 Native Performance Resource 探测；
 - 防止历史 sidecar 的零宽高覆盖真实值；
-- HLS 失败恢复支持无 playlist 的 MPEG-TS 缓存入口；
-- HLS 支持非零连续 response 序号；
-- 记录恢复开始、清单重建失败和输出校验诊断。
+- 真实源清单驱动资源闭包，不再伪造每片 10 秒的清单；
+- 保留 KEY/IV/MAP/Range/媒体序号，并支持证明完整后的旧清单迁移；
+- 失败任务仅重试后处理，暂停/删除取消当前工作；
+- 校验三个视频位置与音频缓冲后，原子发布 MP4 并落盘 ready。
 
 ## 6. 当前验证边界
 
 这个源码包没有声称设备验证成功。真实设备仍需自行安装后检查：
 
 ```text
-Storage dylib 是否完成 constructor gate
-Hook 是否安装
-FFmpegKit 是否成功 dlopen
-HLS recovery 是否进入
-recovery.m3u8 是否生成
-最终 MP4 是否通过 AVAsset 校验
+Storage constructor / symbols / installed
+hls-UUID-start: version / nonce
+hls-UUID-playlist: expectedDuration / trackCount / keyCount
+hls-UUID-remux: nativeCalled / nativeReturn / sharedLockVerified
+hls-UUID-result: recovery-output-valid / taskPersisted
 ```
+
+生产模块回归（macOS）：
+
+```sh
+sh tests/native-remux-check.sh
+sh tests/media-validator-check.sh
+sh tests/recovery-state-check.sh
+```
+
+原生接口测试使用明确的 fake-remux 导出验证 ABI 和生命周期；视频校验执行真实 AVFoundation 解码。它们不等价于原 iOS Agent 的真实 libav 调用成功。真机最终结果须另行核实。
 
 设备诊断目录为：
 

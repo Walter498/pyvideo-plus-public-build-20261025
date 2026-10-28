@@ -25,6 +25,9 @@ jobs:
         run: |
           xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I storage tests/hls-localizer-test.m storage/PVXHLSLocalizer.m storage/PVXHLSManifest.m -framework Foundation -o "$RUNNER_TEMP/pvx-localizer-test"
           "$RUNNER_TEMP/pvx-localizer-test"
+      - name: Decode six actual HLS fixtures after production localization
+        if: ${{ !cancelled() }}
+        run: sh tests/hls-e2e-check.sh
       - name: Execute native ABI adapter tests
         if: ${{ !cancelled() }}
         run: sh tests/native-remux-check.sh
