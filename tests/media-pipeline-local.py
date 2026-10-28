@@ -98,7 +98,9 @@ def test_source_guards():
     assert 'live[@"state"]=@"paused";' in recovery
     assert 'if(job&&[action isEqual:@"resume"])return YES;' in recovery
     libav_input=(ROOT/'storage/PVXLibavInput.m').read_text()
-    assert 'PVXRepairRepeatedAudioPES' in libav_input
+    assert 'PVXADTS' in libav_input
+    assert 'resourceReport' in libav_input
+    assert 'PVXRepairRepeatedAudioPESFile' in libav_input
     assert 'Native input resource escapes task cache' in libav_input
     assert 'sharedLockVerified' in (ROOT/'storage/PVXNativeRemux.m').read_text()
     assert 'PVXFetchTaskThumbnail(linked?r[@"linkedTask"]:r,' in ui
