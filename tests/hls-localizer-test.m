@@ -377,6 +377,16 @@ static void CachedRedirectAndPrivateTag(void) {
     NSURL *result=Build(@{});
     CHECK(![Read(result) containsString:@"#EXT-X-TOKEN"],@"private nonresource token stripped");
     Closed(result);
+    for(NSString *token in @[@"#EXT-X-TOKEN=opaque-real-cache-token",@"#EXT-X-TOKEN="]) {
+        Fresh();Bytes(@"part.ts",188);
+        Text(@"local-0.m3u8",[NSString stringWithFormat:@"#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n%@\n#EXTINF:4.004000,\npart.ts\n#EXT-X-ENDLIST\n",token]);
+        result=Build(@{});
+        CHECK(![Read(result) containsString:@"#EXT-X-TOKEN"],@"real equals token metadata stripped");
+        Closed(result);
+    }
+    Fresh();Bytes(@"part.ts",188);
+    Text(@"local-0.m3u8",@"#EXTM3U\n#EXT-X-TOKEN-OTHER=not-allowed\n#EXTINF:2,\npart.ts\n#EXT-X-ENDLIST\n");
+    Failure(@{},PVXHLSLocalizerInvalidInput);
 }
 
 int main(void) {

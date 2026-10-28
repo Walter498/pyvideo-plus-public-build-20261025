@@ -21,6 +21,11 @@ static id PVXFail(NSError **error, NSInteger code, NSString *message, NSString *
     if (error) {
         NSMutableDictionary *info = [@{NSLocalizedDescriptionKey: message} mutableCopy];
         if (resource) info[@"resource"] = resource;
+        if ([resource hasPrefix:@"#EXT"]) {
+            NSString *tag=[[resource componentsSeparatedByCharactersInSet:
+                [NSCharacterSet characterSetWithCharactersInString:@":= \t\r\n"]] firstObject];
+            if(tag.length<=64)info[@"manifestTag"]=tag;
+        }
         *error = [NSError errorWithDomain:PVXHLSLocalizerErrorDomain code:code userInfo:info];
     }
     return nil;
@@ -533,7 +538,7 @@ static BOOL PVXRemote(NSURL *url) {
         tag = [[line componentsSeparatedByString:@":"] firstObject];
         // Original PyVideo writes this non-resource metadata tag. Remove it
         // rather than handing an application token to the media demuxer.
-        if ([tag isEqual:@"#EXT-X-TOKEN"]) continue;
+        if ([tag isEqual:@"#EXT-X-TOKEN"] || [line hasPrefix:@"#EXT-X-TOKEN="]) continue;
         if ([line hasPrefix:@"#EXT"] && ![line containsString:@":"] &&
             ![@[@"#EXTM3U", @"#EXT-X-ENDLIST", @"#EXT-X-DISCONTINUITY", @"#EXT-X-GAP",
                 @"#EXT-X-INDEPENDENT-SEGMENTS", @"#EXT-X-I-FRAMES-ONLY"] containsObject:line]) {

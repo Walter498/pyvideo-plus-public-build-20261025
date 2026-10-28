@@ -236,6 +236,9 @@ class Regression:
         audio_hash, _ = self.ff("-xerror", "-i", reference, "-map", "0:a:0", "-vn",
                                 "-c:a", "pcm_s16le", "-f", "hash", "-hash", "sha256", "-")
         sequence = self.encrypt(folder, mode) if mode else 0
+        # Match the cached source syntax seen on the device, not just colon tags.
+        for leaf, _ in original_leaves:
+            leaf.write_text(leaf.read_text().replace("#EXTM3U\n", "#EXTM3U\n#EXT-X-TOKEN=synthetic-cache-token\n", 1))
         # Refresh leaves after encryption so explicit IVs and KEY rotation are audited too.
         original_leaves = [p.read_text() for p, _ in original_leaves]
         cache = self.root / f"{name} scrambled cache"

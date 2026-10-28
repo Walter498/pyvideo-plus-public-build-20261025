@@ -132,7 +132,9 @@ static void PVXRecoverFailedHLS(id agent,NSDictionary *task) {
         if(playlist)playlist=PVXLibavInput(playlist,&error);
         job.nativePlaylist=playlist;
         if(!playlist){
-            NSDictionary *details=@{@"stage":@"localize",@"error":error.localizedDescription?:@"HLS 资源闭包失败"};
+            NSMutableDictionary *details=[@{@"stage":@"localize",@"error":error.localizedDescription?:@"HLS 资源闭包失败",
+                @"errorDomain":error.domain?:@"PVXHLSLocalizer",@"errorCode":@(error.code)} mutableCopy];
+            if(error.userInfo[@"manifestTag"])details[@"manifestTag"]=error.userInfo[@"manifestTag"];
             dispatch_async(dispatch_get_main_queue(),^{PVXRecoveryFinish(agent,job,temporary,NO,details);});
             return;
         }
