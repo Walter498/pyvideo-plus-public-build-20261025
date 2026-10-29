@@ -25,6 +25,10 @@ __attribute__((constructor)) static void Trial(void) {
             NSURL *continuous=PVXLibavInputContinuousTS(playlist,nil,nil,&error);
             if(continuous)success=PVXNativeRemuxHLSWithCancellation(continuous.path,output,nil,&diagnostic,&failure);
         }
+        NSDictionary *outputAttrs=[[NSFileManager defaultManager]attributesOfItemAtPath:output error:NULL];NSNumber *outputBytes=outputAttrs[NSFileSize]?:@0;
+        NSDictionary *prevalidation=@{@"nativeSuccess":@(success),@"primaryDiagnostic":primaryDiagnostic?:@{},@"continuousTSRetried":@(retried),@"diagnostic":diagnostic?:@{},@"error":failure?:error.localizedDescription?:@"",@"outputBytes":outputBytes};
+        NSData *preJSON=[NSJSONSerialization dataWithJSONObject:prevalidation options:NSJSONWritingPrettyPrinted error:NULL];
+        [preJSON writeToFile:[dir stringByAppendingPathComponent:@"native-trial-prevalidation.json"] atomically:YES];
         __block BOOL validated=NO;__block NSDictionary *validation=nil;
         if(success){PVXValidateMediaFile(output,[localizer.summary[@"expectedDuration"] doubleValue],NO,^(BOOL ok,NSDictionary *d){validated=ok;validation=d;});while(!validation){[[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.2]];}}
         success=success&&validated;
