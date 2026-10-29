@@ -7,8 +7,8 @@
 #include <string.h>
 typedef struct { void *buf; int64_t pts,dts; uint8_t *data; int size,index,flags; } Packet;
 __attribute__((constructor)) static void scan(void){
- const char *path=getenv("PVX_PACKET_SCAN");if(!path)return;
- FILE *log=fopen(getenv("PVX_PACKET_LOG"),"w");if(!log)_exit(80);setvbuf(log,NULL,_IOLBF,0);
+ const char *path="/var/mobile/Library/Application Support/com.crctdd.pyvideo/media/1E5D7D77-295F-4585-A492-8989A3F33A2D.hls/pvx-input-02CB83F4-ACD5-409F-918E-55EE04BD5E7A-0.m3u8";
+ FILE *log=fopen("/tmp/pvx-packet-scan.log","w");if(!log)_exit(80);setvbuf(log,NULL,_IOLBF,0);
  int(*op)(void**,const char*,void*,void**)=dlsym(RTLD_DEFAULT,"avformat_open_input");
  int(*info)(void*,void**)=dlsym(RTLD_DEFAULT,"avformat_find_stream_info");
  int(*dict)(void**,const char*,const char*,int)=dlsym(RTLD_DEFAULT,"av_dict_set");
