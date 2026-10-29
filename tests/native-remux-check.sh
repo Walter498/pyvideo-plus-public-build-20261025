@@ -15,15 +15,15 @@ export SDKROOT
 # All executables compile the production .m, not a replacement implementation.
 "$CC" -fobjc-arc -fblocks -Wall -Wextra -Werror -DPVX_NATIVE_REMUX_TESTING=1 \
     -I"$ROOT/storage" "$ROOT/storage/PVXNativeRemux.m" "$ROOT/tests/native-remux-adapter.m" \
-    -framework Foundation -Wl,-export_dynamic -o "$TMP/adapter"
+    -framework Foundation -framework AVFoundation -framework CoreMedia -Wl,-export_dynamic -o "$TMP/adapter"
 "$TMP/adapter"
 "$CC" -dynamiclib "$ROOT/tests/native-remux-foreign.c" -o "$TMP/foreign.dylib"
 "$CC" -fobjc-arc -fblocks -Wall -Wextra -Werror -I"$ROOT/storage" \
     "$ROOT/storage/PVXNativeRemux.m" "$ROOT/tests/native-remux-resolver.m" \
-    -framework Foundation -Wl,-export_dynamic -o "$TMP/resolver"
+    -framework Foundation -framework AVFoundation -framework CoreMedia -Wl,-export_dynamic -o "$TMP/resolver"
 "$TMP/resolver" resolve
 "$TMP/resolver" resolve "$TMP/foreign.dylib"
 "$CC" -fobjc-arc -fblocks -Wall -Wextra -Werror -DEXPORT_MAIN_REMUX=1 -I"$ROOT/storage" \
     "$ROOT/storage/PVXNativeRemux.m" "$ROOT/tests/native-remux-resolver.m" \
-    -framework Foundation -Wl,-export_dynamic -o "$TMP/production"
+    -framework Foundation -framework AVFoundation -framework CoreMedia -Wl,-export_dynamic -o "$TMP/production"
 "$TMP/production" lock-contract
