@@ -113,6 +113,9 @@ def test_source_guards():
     assert 'PVXFetchMediaMetadata(r,' in ui
     assert 'PVXAVFoundationExport' not in (ROOT/'storage/PVXNativeRemux.m').read_text()
     assert 'PVXLibavInputContinuousTS' in recovery
+    collector=(ROOT/'resources/MediaCollector.js').read_text()
+    assert 'cloudSources' in collector and 'magnet:' in collector and 'PikPak' in collector
+    assert 'chooseMediaSource:' in ui and '选择画质/网盘来源' in ui
     assert '导出诊断日志' in ui and 'PVXExportDiagnostics(w.moreButton)' in ui
     support=(ROOT/'src/TaskSupport.m').read_text()
     assert 'PVXObserveTasks(agent);' in storage and 'PVXObserveTasks(self);' in storage
