@@ -20,6 +20,7 @@
 @property(nonatomic, strong) NSMutableDictionary *details;
 @property(nonatomic) BOOL finished;
 @property(nonatomic) NSUInteger frames;
+@property(nonatomic) NSUInteger attempted;
 @property(nonatomic) struct stat initialStat;
 - (void)finish:(BOOL)valid reason:(NSString *)reason;
 - (void)start;
@@ -158,7 +159,8 @@ static BOOL PVXLoaded(id<AVAsynchronousKeyValueLoading> object, NSArray<NSString
             double actualSeconds = CMTimeGetSeconds(actual);
             dispatch_async(self.queue, ^{
                 if (self.finished) return;
-                if (!decoded) { [self finish:NO reason:@"video_decode_failed"]; return; }
+                self.attempted += 1;
+                if (!decoded) { if (self.attempted == times.count) { if (!self.frames) self.details[@"videoFramesUnavailable"]=@YES; [self readAudio:audio]; } return; }
                 NSMutableArray *actuals = self.details[@"actualVideoSampleSeconds"];
                 [actuals addObject:@(actualSeconds)];
                 self.frames += 1;
