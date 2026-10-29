@@ -24,10 +24,10 @@ __attribute__((constructor)) static void Trial(void) {
             @"image0Name":[NSString stringWithUTF8String:_dyld_get_image_name(0)],
             @"identifiedAgent":@(expected!=NULL),@"summary":localizer.summary?:@{},
             @"diagnostic":diagnostic?:@{},@"error":failure?:error.localizedDescription?:@"",
-            @"output":output,@"scope":@"isolated-copy-original-iOS-libav-no-task-publication"} mutableCopy];
+            @"output":output,@"inputReport":PVXLibavInputLastReport()?:@{},@"scope":@"isolated-copy-original-iOS-libav-no-task-publication"} mutableCopy];
         NSData *json=[NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:NULL];
         [json writeToFile:[dir stringByAppendingPathComponent:@"trial-report.json"] atomically:YES];
-        if(playlist)PVXLibavInputCleanup(playlist);
+        if(playlist){}
         _exit(success?0:42);
     }
 }
