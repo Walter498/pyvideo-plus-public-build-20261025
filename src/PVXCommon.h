@@ -3,7 +3,7 @@
 #import <WebKit/WebKit.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
-#define PVX_VERSION @"2.1.1"
+#define PVX_VERSION @"2.1.2"
 NS_ASSUME_NONNULL_BEGIN
 FOUNDATION_EXPORT void PVXOpenDownloads(void);
 FOUNDATION_EXPORT void PVXDownloadPlayingVideo(id _Nullable playerContext);

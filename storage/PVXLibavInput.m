@@ -14,6 +14,7 @@
 - (NSString *)map:(NSURL *)url key:(BOOL)key depth:(NSUInteger)depth error:(NSError **)error;
 @end
 static NSDictionary *PVXLastInputReport;
+static uint64_t PVXLastAudioDTS;
 NSDictionary *PVXLibavInputLastReport(void) { @synchronized([NSObject class]) { return [PVXLastInputReport copy]; } }
 static id PVXInputFail(NSError **error,NSString *reason) {
     if(error)*error=[NSError errorWithDomain:@"PVXLibavInput" code:1 userInfo:@{NSLocalizedDescriptionKey:reason}];
@@ -46,7 +47,7 @@ static BOOL PVXRepairRepeatedAudioPESInner(NSString *source,NSString *destinatio
         if(!inPES)return;
         if(curFrames&&curRate){uint64_t step=(uint64_t)1024*90000/curRate;prevLast=curPTS+(uint64_t)(curFrames-1)*step;prevFrames=curFrames;}
         else {prevLast=curPTS;prevFrames=0;}
-        inPES=NO;accLen=0;
+        inPES=NO;accLen=0;if(prevFrames)PVXLastAudioDTS=prevLast;else if(curPTS)PVXLastAudioDTS=curPTS;
     };
     for(;;){
         @autoreleasepool{
@@ -60,7 +61,7 @@ static BOOL PVXRepairRepeatedAudioPESInner(NSString *source,NSString *destinatio
             if(payload&&pid==audio&&start){
                 endPES();
                 uint64_t pts=(off+14<=188&&(q[off+7]&0x80))?PVXPTS(q+off+9):0;
-                BOOL dup=(prevFrames>0)&&(pts<=prevLast+960);
+                BOOL dup=(prevFrames>0)?(pts<=prevLast+960):(PVXLastAudioDTS>0&&pts<=PVXLastAudioDTS+960);
                 if(dup){changedAny=YES;}
                 curPTS=pts;curFrames=0;curRate=0;inPES=YES;accLen=0;
                 if(dup){continue;} /* drop duplicate PES start packet */
@@ -171,7 +172,7 @@ NSURL *PVXLibavInput(NSURL *closedPlaylist,NSError **error) {
     job.names=[NSMutableDictionary dictionary];job.active=[NSMutableSet set];job.created=[NSMutableArray array];job.resourceReport=[NSMutableArray array];
     NSString *leaf=[job map:closedPlaylist key:NO depth:0 error:error];
     NSDictionary *report=@{@"resourceCount":@(job.resourceReport.count),@"repairedCount":@([[job.resourceReport filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"repaired == YES"]] count]),@"resources":job.resourceReport,@"nativePlaylist":leaf?:@"",@"root":job.root?:@""};
-    @synchronized([NSObject class]) { PVXLastInputReport=report; }
+    @synchronized([NSObject class]) { PVXLastAudioDTS=0;PVXLastInputReport=report; }
     if(!leaf){for(NSString *path in job.created)unlink(path.fileSystemRepresentation);return nil;}
     return [NSURL fileURLWithPath:[job.root stringByAppendingPathComponent:leaf]];
 }
