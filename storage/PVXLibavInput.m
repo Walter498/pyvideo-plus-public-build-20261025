@@ -33,35 +33,51 @@ static NSUInteger PVXPTS(const unsigned char *p) {
 static NSUInteger PVXPTS(const unsigned char *p);
 static BOOL PVXRepairRepeatedAudioPESInner(NSString *source,NSString *destination,BOOL *changed,NSError **error) {
     (void)error;if(changed)*changed=NO;
-    NSData *input=[NSData dataWithContentsOfFile:source options:0 error:error];
-    if(!input.length||input.length%188)return NO;
-    const unsigned char *bytes=input.bytes;NSUInteger count=input.length/188;unsigned int audio=0xffff;
-    NSMutableArray *starts=[NSMutableArray array];NSMutableArray *pts=[NSMutableArray array];NSMutableArray *frames=[NSMutableArray array];NSMutableArray *rates=[NSMutableArray array];
-    __block NSMutableData *cur=nil;__block uint64_t curPTS=0;
-    void (^finish)(void)=^{if(!cur)return;const unsigned char *b=cur.bytes;NSUInteger len=cur.length;NSUInteger h=len>8?9+b[8]:0;NSUInteger pos=h,nf=0,rate=0;
-        while(pos+7<=len){const unsigned char *f=b+pos;if(f[0]!=0xff||(f[1]&0xf6)!=0xf0)break;NSUInteger idx=(f[2]>>2)&15;static const NSUInteger rates[]={96000,88200,64000,48000,44100,32000,24000,22050,16000,12000,11025,8000,7350};if(idx>=13)break;NSUInteger fl=(((NSUInteger)f[3]&3)<<11)|((NSUInteger)f[4]<<3)|((f[5]>>5)&7);if(fl<7||pos+fl>len)break;if(!nf)rate=rates[idx];nf++;pos+=fl;}
-        [pts addObject:@(curPTS)];[frames addObject:@(nf)];[rates addObject:@(rate)];cur=nil;};
-    for(NSUInteger n=0;n<count;n++){
-        const unsigned char *q=bytes+n*188;if(q[0]!=0x47)return NO;
-        unsigned int pid=((q[1]&31)<<8)|q[2];unsigned int afc=(q[3]>>4)&3;BOOL payload=afc==1||afc==3;BOOL start=(q[1]&64)!=0;NSUInteger off=4;
-        if(afc==3){if(q[4]>183)return NO;off+=1+q[4];}if(afc==0||afc==2)payload=NO;if(!payload)continue;
-        if(start&&audio==0xffff&&off+4<=188&&q[off]==0&&q[off+1]==0&&q[off+2]==1&&q[off+3]>=0xc0&&q[off+3]<=0xdf)audio=pid;
-        if(pid!=audio)continue;
-        if(start){finish();[starts addObject:@(n)];cur=[NSMutableData data];curPTS=(off+14<=188&&q[off+7]&0x80)?PVXPTS(q+off+9):0;[cur appendBytes:q+off length:188-off];}
-        else if(cur)[cur appendBytes:q+off length:188-off];
+    NSFileHandle *in=[NSFileHandle fileHandleForReadingAtPath:source];
+    if(!in)return NO;
+    [[NSFileManager defaultManager]createFileAtPath:destination contents:nil attributes:@{NSFilePosixPermissions:@0600}];
+    NSFileHandle *out=[NSFileHandle fileHandleForWritingAtPath:destination];
+    if(!out){[in closeFile];return NO;}
+    unsigned int audio=0xffff;__block BOOL inPES=NO;
+    __block uint64_t prevLast=0;__block NSUInteger prevFrames=0;
+    __block uint64_t curPTS=0;__block NSUInteger curFrames=0,curRate=0;__block unsigned char acc[8192];__block NSUInteger accLen=0;
+    BOOL changedAny=NO;BOOL ok=YES;
+    void (^endPES)(void)=^{
+        if(!inPES)return;
+        if(curFrames&&curRate){uint64_t step=(uint64_t)1024*90000/curRate;prevLast=curPTS+(uint64_t)(curFrames-1)*step;prevFrames=curFrames;}
+        else {prevLast=curPTS;prevFrames=0;}
+        inPES=NO;accLen=0;
+    };
+    for(;;){
+        @autoreleasepool{
+            NSData *d=[in readDataOfLength:188];
+            if(!d.length)break;
+            if(d.length!=188){ok=NO;break;}
+            const unsigned char *q=d.bytes;if(q[0]!=0x47){ok=NO;break;}
+            unsigned int pid=((q[1]&31)<<8)|q[2];unsigned int afc=(q[3]>>4)&3;BOOL payload=afc==1||afc==3;BOOL start=(q[1]&64)!=0;NSUInteger off=4;
+            if(afc==3){if(q[4]>183){ok=NO;break;}off+=1+q[4];}if(afc==0||afc==2)payload=NO;
+            if(payload&&start&&audio==0xffff&&off+4<=188&&q[off]==0&&q[off+1]==0&&q[off+2]==1&&q[off+3]>=0xc0&&q[off+3]<=0xdf)audio=pid;
+            if(payload&&pid==audio&&start){
+                endPES();
+                uint64_t pts=(off+14<=188&&(q[off+7]&0x80))?PVXPTS(q+off+9):0;
+                BOOL dup=(prevFrames>0)&&(pts<=prevLast);
+                if(dup){changedAny=YES;}
+                curPTS=pts;curFrames=0;curRate=0;inPES=YES;accLen=0;
+                if(dup){continue;} /* drop duplicate PES start packet */
+            }
+            if(payload&&pid==audio&&inPES){
+                NSUInteger n=188-off;const unsigned char *b=q+off;
+                if(accLen+n<=sizeof(acc)){memcpy(acc+accLen,b,n);accLen+=n;}
+                NSUInteger pos=0;
+                while(accLen-pos>=7){const unsigned char *f=acc+pos;if(f[0]!=0xff||(f[1]&0xf6)!=0xf0)break;NSUInteger idx=(f[2]>>2)&15;static const NSUInteger rates[]={96000,88200,64000,48000,44100,32000,24000,22050,16000,12000,11025,8000,7350};if(idx>=13)break;NSUInteger fl=(((NSUInteger)f[3]&3)<<11)|((NSUInteger)f[4]<<3)|((f[5]>>5)&7);if(fl<7||pos+fl>accLen)break;if(!curFrames)curRate=rates[idx];curFrames++;pos+=fl;}
+                if(pos){memmove(acc,acc+pos,accLen-pos);accLen-=pos;}
+            }
+            [out writeData:d];
+        }
     }
-    finish();if(starts.count<2)return NO;
-    NSMutableIndexSet *drop=[NSMutableIndexSet indexSet];
-    for(NSUInteger i=1;i<starts.count;i++){
-        uint64_t prevPTS=[pts[i-1] unsignedLongLongValue];NSUInteger nf=[frames[i-1] unsignedIntegerValue];NSUInteger rate=[rates[i-1] unsignedIntegerValue];
-        if(!nf||!rate)continue;uint64_t step=(uint64_t)1024*90000/rate;uint64_t prevLast=prevPTS+(uint64_t)(nf-1)*step;
-        if([pts[i] unsignedLongLongValue]<=prevLast)[drop addIndex:[starts[i] unsignedIntegerValue]];
-    }
-    if(!drop.count)return NO;
-    NSMutableData *out=[NSMutableData dataWithCapacity:input.length];
-    for(NSUInteger n=0;n<count;n++){if([drop containsIndex:n])continue;[out appendBytes:bytes+n*188 length:188];}
-    if(![out writeToFile:destination options:NSDataWritingAtomic error:error])return NO;
-    chmod(destination.fileSystemRepresentation,0600);if(changed)*changed=YES;return YES;
+    endPES();[in closeFile];[out closeFile];
+    if(!ok||!changedAny){unlink(destination.fileSystemRepresentation);return NO;}
+    if(changed)*changed=YES;return YES;
 }
 static BOOL PVXRepairRepeatedAudioPESFile(NSString *source,NSString *destination,BOOL *changed,NSError **error) {
     @autoreleasepool {
@@ -150,6 +166,7 @@ NSURL *PVXLibavInput(NSURL *closedPlaylist,NSError **error) {
         return PVXInputFail(error,@"Native input cache missing");
     PVXFileProtocolInput *job=[PVXFileProtocolInput new];
     job.root=[NSString stringWithUTF8String:root];job.token=NSUUID.UUID.UUIDString;
+    for(NSString *old in [[NSFileManager defaultManager]contentsOfDirectoryAtPath:job.root error:NULL])if([old hasPrefix:@"pvx-input-"])unlink([job.root stringByAppendingPathComponent:old].fileSystemRepresentation);
     job.names=[NSMutableDictionary dictionary];job.active=[NSMutableSet set];job.created=[NSMutableArray array];job.resourceReport=[NSMutableArray array];
     NSString *leaf=[job map:closedPlaylist key:NO depth:0 error:error];
     NSDictionary *report=@{@"resourceCount":@(job.resourceReport.count),@"repairedCount":@([[job.resourceReport filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"repaired == YES"]] count]),@"resources":job.resourceReport,@"nativePlaylist":leaf?:@"",@"root":job.root?:@""};
