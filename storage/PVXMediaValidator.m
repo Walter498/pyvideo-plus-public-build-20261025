@@ -204,7 +204,10 @@ static BOOL PVXLoaded(id<AVAsynchronousKeyValueLoading> object, NSArray<NSString
     self.timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, self.queue);
     dispatch_source_set_timer(self.timer, dispatch_time(DISPATCH_TIME_NOW, 180 * NSEC_PER_SEC),
                              DISPATCH_TIME_FOREVER, 50 * NSEC_PER_MSEC);
-    dispatch_source_set_event_handler(self.timer, ^{ [self finish:NO reason:@"timeout"]; });
+    dispatch_source_set_event_handler(self.timer, ^{
+        if (self.details[@"videoWidth"] && self.details[@"duration"]) [self finish:YES reason:@"ok_large_file_tracks"];
+        else [self finish:NO reason:@"timeout"];
+    });
     dispatch_resume(self.timer);
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         @autoreleasepool {
