@@ -29,6 +29,18 @@ jobs:
       - name: Decode six actual HLS fixtures after production localization
         if: ${{ !cancelled() }}
         run: sh tests/hls-e2e-check.sh
+      - name: Execute production libav TS input and nonce cleanup regressions
+        if: ${{ !cancelled() }}
+        env:
+          PVX_LIBAV_INPUT_WORK: ${{ runner.temp }}/pvx libav input regression
+        run: sh tests/libav-input-check.sh
+      - name: Upload production libav input regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: libav-input-regression
+          path: ${{ runner.temp }}/pvx libav input regression
+          if-no-files-found: warn
       - name: Execute native ABI adapter tests
         if: ${{ !cancelled() }}
         run: sh tests/native-remux-check.sh

@@ -187,7 +187,7 @@ static void PVXLogEvent(NSDictionary *snapshot,BOOL observe) {
             BOOL active=[@[@"queued",@"downloading",@"hls",@"checking",@"preparing",@"remuxing",@"fallback",@"validating",@"waiting",@"converting",@"saving"] containsObject:safe[@"state"]]||[safe[@"pvxRecoveryActive"] boolValue];
             if(observe&&!changed&&(!active||now-[beats[uuid] doubleValue]<10))return;
             if(uuid){if(seen.count>=512&&!seen[uuid]){[seen removeAllObjects];[beats removeAllObjects];}seen[uuid]=safe;beats[uuid]=@(now);}
-            NSMutableDictionary *row=[safe mutableCopy];row[@"timestamp"]=@(now);row[@"sequence"]=@(++sequence);row[@"pid"]=@(getpid());row[@"version"]=@"3.0.1";
+            NSMutableDictionary *row=[safe mutableCopy];row[@"timestamp"]=@(now);row[@"sequence"]=@(++sequence);row[@"pid"]=@(getpid());row[@"version"]=@"3.0.2";
             for(NSString *key in @[@"received",@"total",@"segmentsDone",@"segmentsTotal"])if(!row[key])row[key]=@0;
             row[@"heartbeat"]=@(!changed);if(!row[@"stage"])row[@"stage"]=row[@"pvxRecoveryStage"]?:row[@"state"]?:@"startup";
             NSData *json=[NSJSONSerialization dataWithJSONObject:row options:0 error:NULL];if(!json||json.length>8192)return;

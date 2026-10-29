@@ -111,8 +111,8 @@ def test_source_guards():
     assert 'PVXFetchTaskThumbnail(linked?r[@"linkedTask"]:r,' in ui
     assert 'if(collect&&!self.metadataRequested&&NSDate.date.timeIntervalSince1970>=self.metadataRetryAfter)' in ui
     assert 'PVXFetchMediaMetadata(r,' in ui
-    assert 'AVAssetExportPresetPassthrough' in (ROOT/'storage/PVXNativeRemux.m').read_text()
-    assert 'AVAssetExportPresetHighestQuality' in (ROOT/'storage/PVXNativeRemux.m').read_text()
+    assert 'PVXAVFoundationExport' not in (ROOT/'storage/PVXNativeRemux.m').read_text()
+    assert 'PVXLibavInputContinuousTS' in recovery
     assert '导出诊断日志' in ui and 'PVXExportDiagnostics(w.moreButton)' in ui
     support=(ROOT/'src/TaskSupport.m').read_text()
     assert 'PVXObserveTasks(agent);' in storage and 'PVXObserveTasks(self);' in storage
