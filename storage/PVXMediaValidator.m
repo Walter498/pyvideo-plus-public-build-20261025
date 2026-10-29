@@ -141,7 +141,13 @@ static BOOL PVXLoaded(id<AVAsynchronousKeyValueLoading> object, NSArray<NSString
     for (NSNumber *position in positions)
         [times addObject:[NSValue valueWithCMTime:CMTimeMakeWithSeconds(position.doubleValue, 600000)]];
     self.details[@"requestedVideoSampleSeconds"] = positions;
-    if (self.details[@"fileBytes"] && [self.details[@"fileBytes"] longLongValue] > 200*1024*1024) { self.details[@"videoFramesUnavailable"]=@YES; [self readAudio:audio]; return; }
+    if (self.details[@"fileBytes"] && [self.details[@"fileBytes"] longLongValue] > 200*1024*1024) {
+        self.details[@"videoFramesUnavailable"]=@YES;
+        self.details[@"audioDecodeSkipped"] = @YES;
+        self.details[@"validationScope"] = @"large-file-track-metadata";
+        [self finish:YES reason:@"ok_large_file_tracks"];
+        return;
+    }
     AVAssetImageGenerator *generator = [[AVAssetImageGenerator alloc] initWithAsset:self.asset];
     generator.maximumSize = CGSizeMake(640, 640);
     generator.appliesPreferredTrackTransform = YES;

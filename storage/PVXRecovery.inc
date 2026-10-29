@@ -24,13 +24,15 @@ static BOOL PVXRecoveryCurrent(id agent,PVXRecoveryJob *job) {
     if(job.cancelled||RecoveryExports[job.uuid]!=job)return NO;
     NSDictionary *live=[agent tasks][job.uuid];
     BOOL active=[live[@"pvxRecoveryActive"] boolValue];
-    return live&&active&&[live[@"pvxRecoveryNonce"] isEqual:job.nonce]&&![agent clearingRequest] &&
-        ([live[@"state"] isEqual:@"paused"]||[live[@"state"] isEqual:@"remuxing"]);
+    return live&&active&&[live[@"pvxRecoveryNonce"] isEqual:job.nonce]&&! [agent clearingRequest];
 }
 static void PVXRecoveryRecord(id agent,PVXRecoveryJob *job,NSString *stage,NSString *failure) {
     NSMutableDictionary *live=[[[agent tasks] objectForKey:job.uuid] mutableCopy];
     if(!live)return;
     live[@"pvxRecoveryStage"]=stage;
+    // Recovery is active work, not a user pause. Keep the Agent/UI state in
+    // checking while the nonce is live; an explicit pause clears active first.
+    if ([live[@"pvxRecoveryActive"] boolValue]) live[@"state"]=@"checking";
     live[@"updated"]=@(NSDate.date.timeIntervalSince1970);
     if(failure.length)live[@"error"]=[NSString stringWithFormat:@"HLS 后处理失败（%@）：%@",stage,failure];
     [[agent tasks] setObject:live forKey:job.uuid];
@@ -73,10 +75,10 @@ static void PVXRecoveryFinish(id agent,PVXRecoveryJob *job,NSString *temporary,B
     NSMutableDictionary *result=[details mutableCopy]?:[NSMutableDictionary dictionary];
     result[@"event"]=valid?@"recovery-output-valid":@"recovery-output-invalid";
     result[@"nonce"]=job.nonce;
-    result[@"version"]=@"2.1.8";
+    result[@"version"]=@"2.1.9";
     if(publishError)result[@"error"]=publishError.localizedDescription;
     NSMutableDictionary *live=[[[agent tasks] objectForKey:job.uuid] mutableCopy];
-    live[@"pvxRecoveryVersion"]=@"2.1.8";
+    live[@"pvxRecoveryVersion"]=@"2.1.9";
     live[@"pvxRecoveryActive"]=@NO;
     live[@"pvxRecoveryStage"]=valid?@"complete":@"failed";
     live[@"updated"]=@(NSDate.date.timeIntervalSince1970);
@@ -123,19 +125,19 @@ static void PVXRecoverFailedHLS(id agent,NSDictionary *task) {
     RecoveryExports[uuid]=job;
     [RecoveryAttempted addObject:uuid];
     NSMutableDictionary *live=[task mutableCopy];
-    live[@"state"]=@"paused";
+    live[@"state"]=@"checking";
     live[@"pvxRecoveryActive"]=@YES;
     [live removeObjectsForKeys:@[@"error",@"networkErrorCode",@"networkErrorDomain",@"validationIssue"]];
     live[@"pvxRecoveryNonce"]=job.nonce;
     live[@"pvxRecoveryStage"]=@"localizing";
-    live[@"pvxRecoveryVersion"]=@"2.1.8";
+    live[@"pvxRecoveryVersion"]=@"2.1.9";
     live[@"updated"]=@(NSDate.date.timeIntervalSince1970);
     [[agent tasks] setObject:live forKey:uuid];
     if(Persist)Persist(agent,@selector(persist:),live);
     if(Notify)Notify(Signal);
     PVXRecoveryHeartbeat(agent,job);
     PVXDiagnostic([NSString stringWithFormat:@"hls-%@-start",uuid],@{
-        @"event":@"recovery-started",@"version":@"2.1.8",@"nonce":job.nonce,
+        @"event":@"recovery-started",@"version":@"2.1.9",@"nonce":job.nonce,
         @"segmentsDone":task[@"segmentsDone"]?:@0,@"segmentsTotal":task[@"segmentsTotal"]?:@0,
         @"recoveryActive":@YES,@"stage":@"localizing"});
     NSString *temporary=Path([NSString stringWithFormat:@"media/%@.%@.recovery.mp4",uuid,job.nonce]);
@@ -196,12 +198,12 @@ static void PVXScanFailedHLS(id agent) {
         BOOL active=[task[@"pvxRecoveryActive"] boolValue];
         BOOL failed=[task[@"state"] isEqual:@"failed"];
         if(!failed&&!active)continue;
-        if(!active&&([task[@"pvxRecoveryVersion"] isEqual:@"2.1.8"]||[RecoveryAttempted containsObject:task[@"id"]]))continue;
+        if(!active&&([task[@"pvxRecoveryVersion"] isEqual:@"2.1.9"]||[RecoveryAttempted containsObject:task[@"id"]]))continue;
         if(active&&!RecoveryExports[task[@"id"]]){
             [RecoveryAttempted removeObject:task[@"id"]];
             PVXRecoverFailedHLS(agent,task);
         } else if(failed&&!RecoveryExports[task[@"id"]]) {
-            if([task[@"pvxRecoveryVersion"] isEqual:@"2.1.8"]||[RecoveryAttempted containsObject:task[@"id"]])continue;
+            if([task[@"pvxRecoveryVersion"] isEqual:@"2.1.9"]||[RecoveryAttempted containsObject:task[@"id"]])continue;
             PVXRecoverFailedHLS(agent,task);
         }
     }
