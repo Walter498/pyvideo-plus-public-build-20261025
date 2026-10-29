@@ -150,7 +150,7 @@ static long long PVXBytes(id v) { return [v isKindOfClass:NSNumber.class] ? MAX(
 
 static NSMutableDictionary *PVXPublicRow(NSDictionary *raw, NSString *kind) {
     NSMutableDictionary *row = [NSMutableDictionary dictionary];
-    for (NSString *key in @[@"id", @"state", @"title", @"error", @"uti", @"extension", @"width", @"height"]) {
+    for (NSString *key in @[@"id", @"state", @"title", @"error", @"uti", @"extension", @"width", @"height", @"pvxRecoveryStage", @"pvxRecoveryVersion"]) {
         NSString *v = PVXSafeText(raw[key], [key isEqual:@"title"] ? 180 : 160);
         if (v.length) row[key] = v;
     }
@@ -158,7 +158,7 @@ static NSMutableDictionary *PVXPublicRow(NSDictionary *raw, NSString *kind) {
     NSString *diagnostic=PVXSafeText(raw[@"error"],320);[row removeObjectForKey:@"error"];
     if(diagnostic.length&&[diagnostic rangeOfCharacterFromSet:NSCharacterSet.newlineCharacterSet].location==NSNotFound)row[@"error"]=diagnostic;
     else if ([raw[@"state"] isEqual:@"failed"]) row[@"error"] = @"下载失败，请重试或检查服务";
-    for (NSString *key in @[@"created", @"updated", @"received", @"total", @"segmentsDone", @"segmentsTotal", @"conversionProgress"]) {
+    for (NSString *key in @[@"created", @"updated", @"received", @"total", @"segmentsDone", @"segmentsTotal", @"conversionProgress", @"pvxRecoveryActive"]) {
         if ([raw[key] isKindOfClass:NSNumber.class]) row[key] = raw[key];
     }
     row[@"kind"] = kind;
@@ -228,14 +228,33 @@ static NSDictionary *PVXSnapshotStorage;
 static BOOL PVXSnapshotRunning;
 static void PVXSnapshotSetup(void){static dispatch_once_t once;dispatch_once(&once,^{PVXSnapshotQueue=dispatch_queue_create("com.crctdd.pyvideo.plus.task-snapshot",DISPATCH_QUEUE_SERIAL);PVXSnapshotLock=[NSLock new];PVXSnapshotRows=@[];PVXSnapshotStorage=@{};PVXSnapshotCallbacks=[NSMutableArray array];});}
 NSDictionary *PVXStorageSummary(void);
+static BOOL PVXSnapshotDirty,PVXStorageRunning;
 void PVXRequestTaskSnapshot(void(^completion)(NSArray<NSDictionary*>*,NSDictionary*)) {
- PVXSnapshotSetup();[PVXSnapshotLock lock];if(completion)[PVXSnapshotCallbacks addObject:[completion copy]];if(PVXSnapshotRunning){[PVXSnapshotLock unlock];return;}PVXSnapshotRunning=YES;[PVXSnapshotLock unlock];
+ PVXSnapshotSetup();[PVXSnapshotLock lock];
+ if(completion)[PVXSnapshotCallbacks addObject:[completion copy]];
+ PVXSnapshotDirty=YES;
+ if(PVXSnapshotRunning){[PVXSnapshotLock unlock];return;}
+ PVXSnapshotRunning=YES;[PVXSnapshotLock unlock];
  dispatch_async(PVXSnapshotQueue,^{@autoreleasepool{
-  NSArray *rows=PVXScanVideoTasks();static NSTimeInterval lastStorage;NSTimeInterval now=NSDate.date.timeIntervalSince1970;NSDictionary *cached=PVXSnapshotStorage?:@{};BOOL refreshStorage=!cached.count||now-lastStorage>=15;
-  [PVXSnapshotLock lock];PVXSnapshotRows=rows;NSArray *first=[PVXSnapshotCallbacks copy];[PVXSnapshotCallbacks removeAllObjects];[PVXSnapshotLock unlock];
-  dispatch_async(dispatch_get_main_queue(),^{for(void(^block)(NSArray*,NSDictionary*) in first)block(rows,cached);});
-  if(refreshStorage){NSDictionary *storage=PVXStorageSummary();lastStorage=NSDate.date.timeIntervalSince1970;[PVXSnapshotLock lock];PVXSnapshotStorage=storage;NSArray *second=[PVXSnapshotCallbacks copy];[PVXSnapshotCallbacks removeAllObjects];PVXSnapshotRunning=NO;[PVXSnapshotLock unlock];dispatch_async(dispatch_get_main_queue(),^{for(void(^block)(NSArray*,NSDictionary*) in second)block(rows,storage);});}
-  else{[PVXSnapshotLock lock];PVXSnapshotRunning=NO;NSArray *late=[PVXSnapshotCallbacks copy];[PVXSnapshotCallbacks removeAllObjects];[PVXSnapshotLock unlock];dispatch_async(dispatch_get_main_queue(),^{for(void(^block)(NSArray*,NSDictionary*) in late)block(rows,cached);});}
+  for(;;){
+   // Detach waiters BEFORE scanning. Requests arriving mid-scan get a NEW scan,
+   // never the earlier rows delayed by a storage-size traversal.
+   [PVXSnapshotLock lock];PVXSnapshotDirty=NO;
+   NSArray *callbacks=[PVXSnapshotCallbacks copy];[PVXSnapshotCallbacks removeAllObjects];
+   [PVXSnapshotLock unlock];
+   NSArray *rows=PVXScanVideoTasks();
+   [PVXSnapshotLock lock];PVXSnapshotRows=rows;NSDictionary *space=PVXSnapshotStorage;
+   static NSTimeInterval lastStorage;
+   BOOL refresh=!PVXStorageRunning&&(!space.count||NSDate.date.timeIntervalSince1970-lastStorage>=15);
+   if(refresh){PVXStorageRunning=YES;lastStorage=NSDate.date.timeIntervalSince1970;}
+   [PVXSnapshotLock unlock];
+   dispatch_async(dispatch_get_main_queue(),^{for(void(^block)(NSArray*,NSDictionary*) in callbacks)block(rows,space);});
+   if(refresh)dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
+    NSDictionary *storage=PVXStorageSummary();[PVXSnapshotLock lock];PVXSnapshotStorage=storage?:@{};PVXStorageRunning=NO;[PVXSnapshotLock unlock];
+   });
+   [PVXSnapshotLock lock];BOOL again=PVXSnapshotDirty;if(!again)PVXSnapshotRunning=NO;[PVXSnapshotLock unlock];
+   if(!again)break;
+  }
  }});
 }
 NSArray<NSDictionary*> *PVXReadVideoTasks(void) {
@@ -423,7 +442,40 @@ static NSMutableSet *PVXShareSessions;
 }
 - (void)presentationControllerDidDismiss:(UIPresentationController *)controller { (void)controller; [self finish]; }
 @end
-void PVXExportDiagnostics(UIView *anchor){if(!NSThread.isMainThread){dispatch_async(dispatch_get_main_queue(),^{PVXExportDiagnostics(anchor);});return;}NSString *root=PVXStateRoot();if(!root.length){PVXAlert(@"无法导出诊断",@"找不到插件状态目录。");return;}dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{NSMutableString *text=[NSMutableString stringWithFormat:@"PyVideo diagnostics\\ncreated=%.3f\\nroot=%@\\n\\n",NSDate.date.timeIntervalSince1970,root];for(NSString *sub in @[@"plus-diagnostics",@"tasks"]){NSString *dir=[root stringByAppendingPathComponent:sub];[text appendFormat:@"[%@]\\n",sub];for(NSString *name in [[NSFileManager defaultManager] contentsOfDirectoryAtPath:dir error:nil]){if(![name.pathExtension.lowercaseString isEqual:@"plist"])continue;NSString *path=[dir stringByAppendingPathComponent:name];NSDictionary *p=[NSDictionary dictionaryWithContentsOfFile:path];if([sub isEqual:@"tasks"]&&!([p[@"error"] isKindOfClass:NSString.class]||[p[@"segmentsTotal"] longLongValue]>0))continue;[text appendFormat:@"%@ = %@\\n",name,p?:@{}];}[text appendString:@"\\n"]; }for(NSString *name in @[@"events.jsonl",@"events.jsonl.1"]){NSString *path=[[root stringByAppendingPathComponent:@"plus-diagnostics"] stringByAppendingPathComponent:name];NSString *log=[NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];if(log.length)[text appendFormat:@"[%@]\\n%@\\n",name,log];}NSError *error=nil;NSString *file=[NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"PyVideo-diagnostics-%@.txt",NSUUID.UUID.UUIDString]];BOOL ok=[text writeToFile:file atomically:YES encoding:NSUTF8StringEncoding error:&error];dispatch_async(dispatch_get_main_queue(),^{if(!ok){PVXAlert(@"无法导出诊断",error.localizedDescription?:@"写入诊断文件失败。");return;}UIViewController *p=PVXPresenter();if(!p)return;UIActivityViewController *share=[[UIActivityViewController alloc]initWithActivityItems:@[[NSURL fileURLWithPath:file]] applicationActivities:nil];UIPopoverPresentationController *pop=share.popoverPresentationController;if(pop){pop.sourceView=anchor?:p.view;pop.sourceRect=anchor?anchor.bounds:CGRectMake(p.view.bounds.size.width/2,p.view.bounds.size.height/2,1,1);pop.permittedArrowDirections=0;}[p presentViewController:share animated:YES completion:nil];});});}
+// Export is deliberately schema-based: no raw task/error/title/URL/headers,
+// even for legacy diagnostics written before the live logger was installed.
+static NSDictionary *PVXDiagnosticPublic(id raw) {
+ if(![raw isKindOfClass:NSDictionary.class])return @{};
+ NSMutableDictionary *safe=[NSMutableDictionary dictionary];
+ for(NSString *key in @[@"received",@"total",@"mediaBytes",@"segmentsDone",@"segmentsTotal",@"conversionProgress",@"pvxRecoveryActive",@"timestamp",@"updated",@"created",@"sequence",@"pid",@"heartbeat",@"errorCode",@"nativeReturn",@"nativeResult",@"nativeCalled",@"underlyingErrorCode",@"exportStatus",@"success",@"sharedLockVerified",@"videoWidth",@"videoHeight",@"videoDuration",@"duration",@"expectedDuration",@"requireAudio",@"hasAudio",@"videoFramesDecoded",@"audioSampleDecoded",@"audioDecodeSkipped",@"fileBytes",@"valid",@"fullDecode",@"avfoundationFallbackAttempted",@"avfoundationFallbackSuccess",@"taskPersisted",@"videoWidth",@"videoHeight",@"duration"]){id value=raw[key];if([value isKindOfClass:NSNumber.class])safe[key]=value;}
+ if(PVXUUID(raw[@"id"]))safe[@"id"]=raw[@"id"];
+ NSCharacterSet *bad=[NSCharacterSet characterSetWithCharactersInString:@"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_."].invertedSet;
+ for(NSString *key in @[@"stage",@"state",@"event",@"reason",@"validationScope",@"version",@"pvxRecoveryStage",@"pvxRecoveryVersion"]){id value=raw[key];if([value isKindOfClass:NSString.class]&&[value length]<=64&&[value rangeOfCharacterFromSet:bad].location==NSNotFound)safe[key]=value;}
+ return safe;
+}
+static NSData *PVXDiagnosticLogData(NSString *path) {
+ if(!PVXContained(path,PVXRoot()))return nil;
+ int fd=open(path.fileSystemRepresentation,O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC);if(fd<0)return nil;
+ struct stat st;if(fstat(fd,&st)||!S_ISREG(st.st_mode)||st.st_size<0||st.st_size>512*1024){close(fd);return nil;}
+ NSMutableData *data=[NSMutableData dataWithLength:(NSUInteger)st.st_size];NSUInteger done=0;
+ while(done<data.length){ssize_t n=read(fd,(char *)data.mutableBytes+done,data.length-done);if(n<=0)break;done+=(NSUInteger)n;}close(fd);
+ return done==data.length?data:nil;
+}
+void PVXExportDiagnostics(UIView *anchor){if(!NSThread.isMainThread){dispatch_async(dispatch_get_main_queue(),^{PVXExportDiagnostics(anchor);});return;}NSString *root=PVXStateRoot();if(!root.length){PVXAlert(@"无法导出诊断",@"找不到插件状态目录。");return;}dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{NSMutableString *text=[NSMutableString stringWithFormat:@"PyVideo diagnostics\ncreated=%.3f\n\n",NSDate.date.timeIntervalSince1970];
+[text appendString:@"[current-task-snapshot]\n"];
+for(NSDictionary *row in PVXScanVideoTasks()){NSDictionary *safe=PVXDiagnosticPublic(row);NSData *data=[NSJSONSerialization dataWithJSONObject:safe options:0 error:NULL];if(data)[text appendFormat:@"%@\n",[[NSString alloc]initWithData:data encoding:NSUTF8StringEncoding]];}
+NSUInteger count=0;NSString *dir=PVXPath(@"plus-diagnostics");
+for(NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:dir error:nil]){
+ if(++count>128)break;if(![name.pathExtension isEqual:@"plist"])continue;
+ NSDictionary *safe=PVXDiagnosticPublic(PVXPlist([dir stringByAppendingPathComponent:name]));
+ NSData *data=[NSJSONSerialization dataWithJSONObject:safe options:0 error:NULL];if(data)[text appendFormat:@"[diagnostic] %@\n",[[NSString alloc]initWithData:data encoding:NSUTF8StringEncoding]];
+}
+for(NSString *name in @[@"events.jsonl.1",@"events.jsonl"]){
+ NSString *path=[dir stringByAppendingPathComponent:name];NSData *data=PVXDiagnosticLogData(path);if(!data)continue;
+ NSString *log=[[NSString alloc]initWithData:data encoding:NSUTF8StringEncoding];[text appendFormat:@"[%@]\n",name];
+ for(NSString *line in [log componentsSeparatedByString:@"\n"]){if(line.length>8192)continue;id raw=[NSJSONSerialization JSONObjectWithData:[line dataUsingEncoding:NSUTF8StringEncoding] options:0 error:NULL];NSDictionary *safe=PVXDiagnosticPublic(raw);if(!safe.count)continue;NSData *json=[NSJSONSerialization dataWithJSONObject:safe options:0 error:NULL];if(json)[text appendFormat:@"%@\n",[[NSString alloc]initWithData:json encoding:NSUTF8StringEncoding]];}
+}
+NSError *error=nil;NSString *file=[NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"PyVideo-diagnostics-%@.txt",NSUUID.UUID.UUIDString]];BOOL ok=[text writeToFile:file atomically:YES encoding:NSUTF8StringEncoding error:&error];dispatch_async(dispatch_get_main_queue(),^{if(!ok){PVXAlert(@"无法导出诊断",error.localizedDescription?:@"写入诊断文件失败。");return;}UIViewController *p=PVXPresenter();if(!p)return;UIActivityViewController *share=[[UIActivityViewController alloc]initWithActivityItems:@[[NSURL fileURLWithPath:file]] applicationActivities:nil];UIPopoverPresentationController *pop=share.popoverPresentationController;if(pop){pop.sourceView=anchor?:p.view;pop.sourceRect=anchor?anchor.bounds:CGRectMake(p.view.bounds.size.width/2,p.view.bounds.size.height/2,1,1);pop.permittedArrowDirections=0;}[p presentViewController:share animated:YES completion:nil];});});}
 void PVXExportTasks(NSArray<NSDictionary *> *tasks, UIView *anchor) {
     if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ PVXExportTasks(tasks, anchor); }); return; }
     if (!tasks.count) { PVXAlert(@"无法导出", @"请选择已下载的文件"); return; }
@@ -522,9 +574,9 @@ NSDictionary *PVXTaskPresentation(NSDictionary *task) {
     NSString *state = PVXSafeText(task[@"state"], 40);
     BOOL recoveryActive=[task[@"pvxRecoveryActive"] boolValue];
     NSString *recoveryStage=PVXSafeText(task[@"pvxRecoveryStage"],40);
-    if(recoveryActive&&[@[@"localizing",@"remuxing",@"validating"] containsObject:recoveryStage])state=recoveryStage;
+    if(recoveryActive&&[@[@"waiting",@"preparing",@"localizing",@"remuxing",@"fallback",@"validating"] containsObject:recoveryStage])state=recoveryStage;
     BOOL local = PVXTaskHasLocalFile(task), complete = PVXComplete(task);
-    NSDictionary *names = @{@"submitted":@"请求已排队 · 等待服务接收", @"serviceUnavailable":@"下载服务未响应（超过15秒）", @"queued":@"等待下载", @"downloading":@"下载中", @"hls":@"下载中", @"remuxing":@"正在封装", @"localizing":@"准备封装", @"validating":@"校验输出", @"checking":@"校验中", @"converting":@"转换中", @"ready":@"下载完成", @"saved":@"下载完成", @"completed":@"下载完成", @"albumFailed":@"下载完成", @"uncertain":@"下载完成", @"failed":@"下载失败", @"pausing":@"正在暂停", @"paused":@"已暂停", @"deleting":@"正在删除", @"saving":@"正在处理"};
+    NSDictionary *names = @{@"submitted":@"请求已排队 · 等待服务接收", @"serviceUnavailable":@"下载服务未响应（超过15秒）", @"queued":@"等待下载", @"waiting":@"等待封装队列", @"preparing":@"准备本地 HLS", @"fallback":@"系统封装回退", @"downloading":@"下载中", @"hls":@"下载中", @"remuxing":@"正在封装", @"localizing":@"准备封装", @"validating":@"校验输出", @"checking":@"校验中", @"converting":@"转换中", @"ready":@"下载完成", @"saved":@"下载完成", @"completed":@"下载完成", @"albumFailed":@"下载完成", @"uncertain":@"下载完成", @"failed":@"下载失败", @"pausing":@"正在暂停", @"paused":@"已暂停", @"deleting":@"正在删除", @"saving":@"正在处理"};
     NSString *status = complete && !local ? @"本地原文件缺失 · 需重新下载" : names[state] ?: @"等待处理";if([state isEqual:@"failed"]&&PVXSafeText(task[@"error"],240).length)status=[NSString stringWithFormat:@"下载失败：%@",PVXSafeText(task[@"error"],240)];
     BOOL success = complete && local;
     BOOL fail = [@[@"failed", @"serviceUnavailable"] containsObject:state] || (complete && !local);

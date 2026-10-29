@@ -153,13 +153,93 @@ static BOOL ValidID(id value) {
 static NSString *PVXFallbackRoot(void){NSString *home=NSHomeDirectory();return [home stringByAppendingPathComponent:@"Library/Application Support/com.crctdd.pyvideo"];}
 static NSString *Path(NSString *leaf){NSString *root=Root?Root():nil;if(!root.length)root=PVXFallbackRoot();return [root stringByAppendingPathComponent:leaf];}
 static BOOL SafeDirectory(NSString *path){struct stat s;if(lstat(path.fileSystemRepresentation,&s)){if(errno!=ENOENT||mkdir(path.fileSystemRepresentation,0700))return NO;if(lstat(path.fileSystemRepresentation,&s))return NO;}return S_ISDIR(s.st_mode)&&!S_ISLNK(s.st_mode)&&s.st_uid==geteuid();}
-static void PVXBootMark(NSString *stage,NSDictionary *fields){if(!stage.length)return;NSString *dir=Path(@"plus-diagnostics");if(!SafeDirectory(dir))return;NSMutableDictionary *payload=[fields mutableCopy]?:[NSMutableDictionary dictionary];payload[@"stage"]=stage;payload[@"updated"]=@(NSDate.date.timeIntervalSince1970);NSString *file=[dir stringByAppendingPathComponent:@"storage-bootstrap.plist"];[payload writeToFile:file atomically:YES];NSString *stageFile=[dir stringByAppendingPathComponent:[NSString stringWithFormat:@"storage-%@.plist",stage]];[payload writeToFile:stageFile atomically:YES];}
-static void PVXDiagnostic(NSString *name,NSDictionary *value){if(!name.length)return;NSString *dir=Path(@"plus-diagnostics");if(!SafeDirectory(dir))return;NSMutableDictionary *payload=[value mutableCopy]?:[NSMutableDictionary dictionary];payload[@"updated"] = @(NSDate.date.timeIntervalSince1970);NSString *file=[dir stringByAppendingPathComponent:[name stringByAppendingPathExtension:@"plist"]];if(Write)Write(payload,file,NULL);else[payload writeToFile:file atomically:YES];}
+// One bounded serial writer owns rotation, sequence numbers and heartbeat dedup.
+// Only immutable allowlisted scalar snapshots cross from the Agent's main queue.
+static dispatch_queue_t PVXLogQueue;
+static int PVXLogPending;
+static void PVXLogSetup(void) {
+    static dispatch_once_t once;dispatch_once(&once,^{
+        PVXLogQueue=dispatch_queue_create("com.crctdd.pyvideo.live-log",DISPATCH_QUEUE_SERIAL);
+    });
+}
+static NSDictionary *PVXLogFields(NSDictionary *source) {
+    NSMutableDictionary *safe=[NSMutableDictionary dictionary];
+    for(NSString *key in @[@"received",@"total",@"mediaBytes",@"segmentsDone",@"segmentsTotal",@"conversionProgress",@"nativeReturn",@"nativeResult",@"errorCode",@"nativeCalled",@"underlyingErrorCode",@"exportStatus",@"success",@"sharedLockVerified",@"videoWidth",@"videoHeight",@"videoDuration",@"duration",@"expectedDuration",@"requireAudio",@"hasAudio",@"videoFramesDecoded",@"audioSampleDecoded",@"audioDecodeSkipped",@"fileBytes",@"valid",@"fullDecode",@"avfoundationFallbackAttempted",@"avfoundationFallbackSuccess",@"taskPersisted",@"pvxRecoveryActive"]) {
+        id value=source[key];if([value isKindOfClass:NSNumber.class]&&isfinite([value doubleValue]))safe[key]=value;
+    }
+    if(ValidID(source[@"id"]))safe[@"id"]=source[@"id"];
+    NSCharacterSet *bad=[NSCharacterSet characterSetWithCharactersInString:@"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_."].invertedSet;
+    for(NSString *key in @[@"state",@"stage",@"event",@"reason",@"validationScope",@"pvxRecoveryStage",@"pvxRecoveryVersion"]) {
+        id value=source[key];if([value isKindOfClass:NSString.class]&&[value length]<=64&&[value rangeOfCharacterFromSet:bad].location==NSNotFound)safe[key]=value;
+    }
+    return safe;
+}
+static void PVXLogEvent(NSDictionary *snapshot,BOOL observe) {
+    NSDictionary *safe=PVXLogFields(snapshot);PVXLogSetup();
+    // Backpressure is bounded even if storage is slow/full. Next Tick retries.
+    if(__sync_add_and_fetch(&PVXLogPending,1)>128){__sync_sub_and_fetch(&PVXLogPending,1);return;}
+    dispatch_async(PVXLogQueue,^{@autoreleasepool {
+        @try {
+            static unsigned long long sequence;static NSMutableDictionary *seen,*beats;
+            if(!seen){seen=[NSMutableDictionary dictionary];beats=[NSMutableDictionary dictionary];}
+            NSString *uuid=safe[@"id"];NSTimeInterval now=NSDate.date.timeIntervalSince1970;
+            BOOL changed=!uuid||![seen[uuid] isEqual:safe];
+            BOOL active=[@[@"queued",@"downloading",@"hls",@"checking",@"preparing",@"remuxing",@"fallback",@"validating",@"waiting",@"converting",@"saving"] containsObject:safe[@"state"]]||[safe[@"pvxRecoveryActive"] boolValue];
+            if(observe&&!changed&&(!active||now-[beats[uuid] doubleValue]<10))return;
+            if(uuid){if(seen.count>=512&&!seen[uuid]){[seen removeAllObjects];[beats removeAllObjects];}seen[uuid]=safe;beats[uuid]=@(now);}
+            NSMutableDictionary *row=[safe mutableCopy];row[@"timestamp"]=@(now);row[@"sequence"]=@(++sequence);row[@"pid"]=@(getpid());row[@"version"]=@"3.0.1";
+            for(NSString *key in @[@"received",@"total",@"segmentsDone",@"segmentsTotal"])if(!row[key])row[key]=@0;
+            row[@"heartbeat"]=@(!changed);if(!row[@"stage"])row[@"stage"]=row[@"pvxRecoveryStage"]?:row[@"state"]?:@"startup";
+            NSData *json=[NSJSONSerialization dataWithJSONObject:row options:0 error:NULL];if(!json||json.length>8192)return;
+            NSString *dir=Path(@"plus-diagnostics");if(!SafeDirectory(dir))return;
+            NSString *path=[dir stringByAppendingPathComponent:@"events.jsonl"];
+            struct stat st;if(!lstat(path.fileSystemRepresentation,&st)){
+                if(!S_ISREG(st.st_mode)||st.st_uid!=geteuid())return;
+                if(st.st_size+(off_t)json.length+1>512*1024){
+                    NSString *old=[path stringByAppendingString:@".1"];
+                    if(rename(path.fileSystemRepresentation,old.fileSystemRepresentation))return;
+                }
+            }
+            int fd=open(path.fileSystemRepresentation,O_WRONLY|O_CREAT|O_APPEND|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC,0600);
+            if(fd<0)return;
+            if(!fstat(fd,&st)&&S_ISREG(st.st_mode)&&st.st_uid==geteuid()){
+                fchmod(fd,0600);NSMutableData *line=[json mutableCopy];[line appendBytes:"\n" length:1];
+                size_t done=0;while(done<line.length){ssize_t n=write(fd,(const char *)line.bytes+done,line.length-done);if(n<0&&errno==EINTR)continue;if(n<=0)break;done+=(size_t)n;}
+                // Never leave a partial JSON record after ENOSPC/short write.
+                if(done!=line.length)ftruncate(fd,st.st_size);
+                fsync(fd);
+            }close(fd);
+        } @finally {__sync_sub_and_fetch(&PVXLogPending,1);}
+    }});
+}
+static void PVXObserveTasks(id agent) {
+    NSUInteger count=0;for(NSDictionary *task in [[agent tasks].allValues copy]){
+        if(count++>=512)break;if([task isKindOfClass:NSDictionary.class])PVXLogEvent(task,YES);
+    }
+}
+static void PVXBootMark(NSString *stage,NSDictionary *fields){
+    PVXLogEvent(@{@"event":@"storage-bootstrap",@"stage":stage?:@"startup"},NO);
+    PVXLogSetup();NSDictionary *copy=[fields copy];dispatch_async(PVXLogQueue,^{
+        NSString *dir=Path(@"plus-diagnostics");if(!SafeDirectory(dir))return;
+        NSMutableDictionary *payload=[PVXLogFields(copy) mutableCopy];payload[@"stage"]=stage;payload[@"updated"]=@(NSDate.date.timeIntervalSince1970);
+        [payload writeToFile:[dir stringByAppendingPathComponent:@"storage-bootstrap.plist"] atomically:YES];
+        [payload writeToFile:[dir stringByAppendingPathComponent:[NSString stringWithFormat:@"storage-%@.plist",stage]] atomically:YES];
+    });
+}
+static void PVXDiagnostic(NSString *name,NSDictionary *value){
+    if(!name.length)return;PVXLogEvent(value,NO);PVXLogSetup();NSDictionary *safe=PVXLogFields(value);
+    dispatch_async(PVXLogQueue,^{NSString *dir=Path(@"plus-diagnostics");if(!SafeDirectory(dir))return;
+        NSMutableDictionary *payload=[safe mutableCopy];payload[@"updated"]=@(NSDate.date.timeIntervalSince1970);
+        NSString *file=[dir stringByAppendingPathComponent:[name stringByAppendingPathExtension:@"plist"]];
+        if(Write)Write(payload,file,NULL);else[payload writeToFile:file atomically:YES];
+    });
+}
 #include "PVXRecovery.inc"
 static id PVXCurrentAgent(void){if(Worker)return Worker;Class app=NSClassFromString(@"UIApplication");SEL shared=NSSelectorFromString(@"sharedApplication");id application=app&&[app respondsToSelector:shared]?((id(*)(id,SEL))objc_msgSend)(app,shared):nil;id delegate=application&&[application respondsToSelector:@selector(delegate)]?((id(*)(id,SEL))objc_msgSend)(application,@selector(delegate)):nil;Class agentClass=NSClassFromString(@"PVAgent");if(delegate&&agentClass&&[delegate isKindOfClass:agentClass])Worker=delegate;return Worker;}
 static void Tick(void) {
     id agent=PVXCurrentAgent();
     if(!agent)return;
+    PVXObserveTasks(agent);
     for(NSString *uuid in [RecoveryExports.allKeys copy]) {
         PVXRecoveryJob *job=RecoveryExports[uuid];
         if(!PVXRecoveryCurrent(agent,job)) {
@@ -170,7 +250,7 @@ static void Tick(void) {
     if([agent respondsToSelector:@selector(exportReady)]&&[agent workerMode])[agent exportReady];
     PVXScanFailedHLS(agent);
 }
-static BOOL Start(id self, SEL cmd){Worker=self;BOOL result=OldStart?OldStart(self,cmd):NO;Worker=self;PVXBootMark(@"worker-started",@{@"result":@(result)});return result;}
+static BOOL Start(id self, SEL cmd){Worker=self;BOOL result=OldStart?OldStart(self,cmd):NO;Worker=self;PVXBootMark(@"worker-started",@{@"result":@(result)});PVXObserveTasks(self);return result;}
 
 // Beta3: foreground system sharing is the sole export entrypoint. Drain old
 // requests without inspecting preferences or ever calling the original exporter.
@@ -297,6 +377,7 @@ static void Install(void) {
         PVXBootMark(@"symbols",@{ @"root":@(Root!=NULL), @"media":@(Media!=NULL), @"write":@(Write!=NULL), @"notify":@(Notify!=NULL) });
         if(!Root||!Media||!Notify){PVXBootLog(@"symbol-lookup-failed");PVXBootMark(@"symbol-lookup-failed",@{});return;}
         BOOL installed=YES;
+        PVXReplaceMethod(AVAssetExportSession.class,@selector(exportAsynchronouslyWithCompletionHandler:),(IMP)PVXObserveAVExport,(IMP *)&PVXOldAVExport);
         installed&=PVXReplaceMethod(c,@selector(pump),(IMP)PVXPumpWithConfiguredLimit,(IMP *)&OldPump);
         installed&=PVXReplaceMethod(c,NSSelectorFromString(@"startTask:hlsURL:"),(IMP)PVXStartTaskRecovery,(IMP *)&OldStartTask);
         installed&=PVXReplaceMethod(c,NSSelectorFromString(@"control:target:"),(IMP)PVXControlRecovery,(IMP *)&OldControl);

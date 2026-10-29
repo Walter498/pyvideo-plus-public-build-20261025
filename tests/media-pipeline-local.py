@@ -95,7 +95,11 @@ def test_source_guards():
     assert 'PVRemuxHLSWithCancel' in (ROOT/'storage/PVXNativeRemux.m').read_text()
     assert 'recovery-started' in recovery
     assert 'pvxRecoveryActive' in recovery and 'PVXRecoveryHeartbeat' in recovery
-    assert 'live[@"state"]=@"checking";' in recovery
+    assert 'live[@"state"]=@"checking";' in recovery  # original Agent protocol
+    assert 'live[@"pvxRecoveryStage"]=stage;' in recovery  # UI/log phase is not checking
+    assert 'job.stage=@"waiting"' in recovery and 'job.stage=@"preparing"' in recovery
+    assert 'job.stage=@"fallback"' in recovery and 'job.stage=@"validating"' in recovery
+    assert "PVXObserveAVExport" in recovery and "session.outputURL.lastPathComponent" in recovery
     assert 'audioDecodeSkipped' in (ROOT/'storage/PVXMediaValidator.m').read_text()
     assert 'if(job&&[action isEqual:@"resume"])return YES;' in recovery
     libav_input=(ROOT/'storage/PVXLibavInput.m').read_text()
@@ -109,7 +113,20 @@ def test_source_guards():
     assert 'PVXFetchMediaMetadata(r,' in ui
     assert 'AVAssetExportPresetPassthrough' in (ROOT/'storage/PVXNativeRemux.m').read_text()
     assert 'AVAssetExportPresetHighestQuality' in (ROOT/'storage/PVXNativeRemux.m').read_text()
-    assert '导出诊断日志' not in ui
+    assert '导出诊断日志' in ui and 'PVXExportDiagnostics(w.moreButton)' in ui
+    support=(ROOT/'src/TaskSupport.m').read_text()
+    assert 'PVXObserveTasks(agent);' in storage and 'PVXObserveTasks(self);' in storage
+    assert 'O_APPEND|O_NOFOLLOW' in storage and '512*1024' in storage
+    assert 'PVXLogPending,1)>128' in storage and 'fsync(fd)' in storage
+    assert 'row[@"heartbeat"]' in storage and 'row[@"sequence"]' in storage
+    assert 'PVXLogEvent(live,NO)' in recovery and 'PVXLogEvent(live,YES)' in recovery
+    assert 'PVXDiagnosticPublic(row)' in support and 'PVXDiagnosticLogData(path)' in support
+    export=support[support.index('void PVXExportDiagnostics('):support.index('void PVXExportDiagnostics(')+6000]
+    assert 'p?:@{}' not in export and 'root=%@' not in export
+    assert 'PVXSnapshotDirty' in support and 'if(!again)PVXSnapshotRunning=NO' in support
+    assert 'NSArray *callbacks=[PVXSnapshotCallbacks copy]' in support
+    assert 'generation!=manager.readGeneration' in ui
+    assert '@"pvxRecoveryStage"' in support and '@"pvxRecoveryActive"' in support
     assert 'collectionCache' in ui and 'conversionFinishedFrom:' in ui
     assert 'PVXMetadataTakeDelivery(&state,timeout)' in metadata and 'if(manifest)return' not in metadata
     print("PASS source: GET/ImageIO metadata, no-playlist recovery, collection thumbnail trigger")

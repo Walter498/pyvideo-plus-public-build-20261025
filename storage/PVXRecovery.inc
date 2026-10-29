@@ -28,21 +28,22 @@ static BOOL PVXRecoveryCurrent(id agent,PVXRecoveryJob *job) {
 }
 static void PVXRecoveryRecord(id agent,PVXRecoveryJob *job,NSString *stage,NSString *failure) {
     NSMutableDictionary *live=[[[agent tasks] objectForKey:job.uuid] mutableCopy];
-    if(!live)return;
+    if(!live||!PVXRecoveryCurrent(agent,job))return;
     live[@"pvxRecoveryStage"]=stage;
-    // Recovery is active work, not a user pause. Keep the Agent/UI state in
-    // checking while the nonce is live; an explicit pause clears active first.
+    // Keep the original Agent protocol state; presentation and JSONL use the
+    // distinct pvxRecoveryStage (waiting/preparing/remuxing/fallback/validating).
     if ([live[@"pvxRecoveryActive"] boolValue]) live[@"state"]=@"checking";
     live[@"updated"]=@(NSDate.date.timeIntervalSince1970);
     if(failure.length)live[@"error"]=[NSString stringWithFormat:@"HLS 后处理失败（%@）：%@",stage,failure];
     [[agent tasks] setObject:live forKey:job.uuid];
     if(Persist)Persist(agent,@selector(persist:),live);
+    PVXLogEvent(live,YES);
     if(Notify)Notify(Signal);
 }
 static void PVXRecoveryHeartbeat(id agent,PVXRecoveryJob *job) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,2*NSEC_PER_SEC),dispatch_get_main_queue(),^{
         if(!PVXRecoveryCurrent(agent,job))return;
-        PVXRecoveryRecord(agent,job,job.stage?:@"localizing",nil);
+        PVXLogEvent([agent tasks][job.uuid],YES);
         PVXRecoveryHeartbeat(agent,job);
     });
 }
@@ -74,7 +75,7 @@ static void PVXRecoveryFinish(id agent,PVXRecoveryJob *job,NSString *temporary,B
     }
     NSMutableDictionary *result=[details mutableCopy]?:[NSMutableDictionary dictionary];
     result[@"event"]=valid?@"recovery-output-valid":@"recovery-output-invalid";
-    result[@"nonce"]=job.nonce;
+    result[@"nonce"]=job.nonce;result[@"id"]=job.uuid;
     result[@"version"]=@"3.0.1";
     if(publishError)result[@"error"]=publishError.localizedDescription;
     NSMutableDictionary *live=[[[agent tasks] objectForKey:job.uuid] mutableCopy];
@@ -110,6 +111,7 @@ static void PVXRecoveryFinish(id agent,PVXRecoveryJob *job,NSString *temporary,B
         [[agent tasks] setObject:live forKey:job.uuid];
         result[@"event"]=@"output-valid-state-write-failed";
     }
+    PVXLogEvent(live,NO);
     PVXDiagnostic([NSString stringWithFormat:@"hls-%@-result",job.uuid],result);
     [RecoveryExports removeObjectForKey:job.uuid];
     if(Notify)Notify(Signal);
@@ -121,7 +123,7 @@ static void PVXRecoverFailedHLS(id agent,NSDictionary *task) {
     PVXRecoverySetup();
     PVXRecoveryJob *job=[PVXRecoveryJob new];
     job.uuid=uuid;job.nonce=NSUUID.UUID.UUIDString;
-    job.task=[task copy];job.cancellation=[PVXNativeRemuxCancellation new];job.stage=@"localizing";
+    job.task=[task copy];job.cancellation=[PVXNativeRemuxCancellation new];job.stage=@"waiting";
     RecoveryExports[uuid]=job;
     [RecoveryAttempted addObject:uuid];
     NSMutableDictionary *live=[task mutableCopy];
@@ -129,7 +131,7 @@ static void PVXRecoverFailedHLS(id agent,NSDictionary *task) {
     live[@"pvxRecoveryActive"]=@YES;
     [live removeObjectsForKeys:@[@"error",@"networkErrorCode",@"networkErrorDomain",@"validationIssue"]];
     live[@"pvxRecoveryNonce"]=job.nonce;
-    live[@"pvxRecoveryStage"]=@"localizing";
+    live[@"pvxRecoveryStage"]=@"waiting";
     live[@"pvxRecoveryVersion"]=@"3.0.1";
     live[@"updated"]=@(NSDate.date.timeIntervalSince1970);
     [[agent tasks] setObject:live forKey:uuid];
@@ -139,18 +141,24 @@ static void PVXRecoverFailedHLS(id agent,NSDictionary *task) {
     PVXDiagnostic([NSString stringWithFormat:@"hls-%@-start",uuid],@{
         @"event":@"recovery-started",@"version":@"3.0.1",@"nonce":job.nonce,
         @"segmentsDone":task[@"segmentsDone"]?:@0,@"segmentsTotal":task[@"segmentsTotal"]?:@0,
-        @"recoveryActive":@YES,@"stage":@"localizing"});
+        @"id":uuid,@"recoveryActive":@YES,@"stage":@"waiting"});
     NSString *temporary=Path([NSString stringWithFormat:@"media/%@.%@.recovery.mp4",uuid,job.nonce]);
     NSURL *root=[NSURL fileURLWithPath:Path(@"") isDirectory:YES];
     dispatch_async(PVXRecoveryQueue,^{@autoreleasepool {
         if(job.cancelled)return;
+        __block BOOL preparing=NO;
+        dispatch_sync(dispatch_get_main_queue(),^{
+            preparing=PVXRecoveryCurrent(agent,job);
+            if(preparing){job.stage=@"preparing";PVXRecoveryRecord(agent,job,@"preparing",nil);}
+        });
+        if(!preparing)return;
         NSError *error=nil;
         PVXHLSLocalizer *localizer=[PVXHLSLocalizer new];
         NSURL *playlist=[localizer localizeTask:job.task rootDirectory:root error:&error];
         if(playlist)playlist=PVXLibavInput(playlist,&error);
         job.nativePlaylist=playlist;
         NSDictionary *inputReport=PVXLibavInputLastReport();
-        if(inputReport)PVXDiagnostic([NSString stringWithFormat:@"hls-%@-input",uuid],inputReport);
+        if(inputReport){NSMutableDictionary *report=[inputReport mutableCopy];report[@"id"]=uuid;PVXDiagnostic([NSString stringWithFormat:@"hls-%@-input",uuid],report);}
         if(!playlist){
             NSMutableDictionary *details=[@{@"stage":@"localize",@"error":error.localizedDescription?:@"HLS 资源闭包失败",
                 @"errorDomain":error.domain?:@"PVXHLSLocalizer",@"errorCode":@(error.code)} mutableCopy];
@@ -162,7 +170,7 @@ static void PVXRecoverFailedHLS(id agent,NSDictionary *task) {
         job.expectedDuration=[summary[@"expectedDuration"] doubleValue];
         job.requireAudio=[summary[@"requireAudio"] boolValue];
         NSMutableDictionary *playlistDetails=[summary mutableCopy];
-        playlistDetails[@"event"]=@"playlist-built";playlistDetails[@"nonce"]=job.nonce;
+        playlistDetails[@"id"]=uuid;playlistDetails[@"event"]=@"playlist-built";playlistDetails[@"nonce"]=job.nonce;
         PVXDiagnostic([NSString stringWithFormat:@"hls-%@-playlist",uuid],playlistDetails);
         __block BOOL current=NO;
         dispatch_sync(dispatch_get_main_queue(),^{
@@ -174,7 +182,7 @@ static void PVXRecoverFailedHLS(id agent,NSDictionary *task) {
         BOOL remuxed=PVXNativeRemuxHLSWithCancellation(playlist.path,temporary,job.cancellation,&nativeDetails,&nativeError);
         NSMutableDictionary *remuxDetails=[nativeDetails mutableCopy]?:[NSMutableDictionary dictionary];
         remuxDetails[@"event"]=remuxed?@"remux-success":@"remux-failed";
-        remuxDetails[@"nonce"]=job.nonce;
+        remuxDetails[@"nonce"]=job.nonce;remuxDetails[@"id"]=uuid;
         if(nativeError.length)remuxDetails[@"error"]=nativeError;
         PVXDiagnostic([NSString stringWithFormat:@"hls-%@-remux",uuid],remuxDetails);
         dispatch_async(dispatch_get_main_queue(),^{
@@ -218,6 +226,7 @@ static BOOL PVXControlRecovery(id agent,SEL selector,id action,id uuid) {
         job.cancelled=YES;[job.cancellation cancel];
         NSMutableDictionary *cancelled=[[task mutableCopy]?:[NSMutableDictionary dictionary] mutableCopy];
         cancelled[@"pvxRecoveryActive"]=@NO;cancelled[@"state"]=[action isEqual:@"pause"]?@"paused":@"deleted";
+        cancelled[@"pvxRecoveryStage"]=@"cancelled";cancelled[@"updated"]=@(NSDate.date.timeIntervalSince1970);PVXLogEvent(cancelled,NO);
         if(Persist)Persist(agent,@selector(persist:),cancelled);
         [[agent tasks] setObject:cancelled forKey:uuid];
         [RecoveryExports removeObjectForKey:uuid];
@@ -241,4 +250,39 @@ static void PVXStartTaskRecovery(id agent,SEL selector,NSDictionary *task,id hls
         return;
     }
     if(OldStartTask)OldStartTask(agent,selector,task,hlsURL);
+}
+
+static void (*PVXOldAVExport)(id,SEL,void(^)(void));
+static void PVXObserveAVExport(AVAssetExportSession *session,SEL selector,void(^completion)(void)) {
+    NSString *leaf=[session.outputURL.lastPathComponent copy];
+    if(![leaf hasSuffix:@".recovery.mp4"]){PVXOldAVExport(session,selector,completion);return;}
+    NSString *preset=[session.presetName copy];
+    NSString *outputPath=[session.outputURL.path copy];
+    dispatch_async(dispatch_get_main_queue(),^{
+        for(PVXRecoveryJob *job in [RecoveryExports.allValues copy]) {
+            NSString *expected=[NSString stringWithFormat:@"%@.%@.recovery.mp4",job.uuid,job.nonce];
+            id agent=Worker;
+            if([leaf isEqual:expected]&&[outputPath isEqual:Path([@"media" stringByAppendingPathComponent:expected])]&&agent&&PVXRecoveryCurrent(agent,job)){
+                job.stage=@"fallback";PVXRecoveryRecord(agent,job,@"fallback",nil);
+                PVXLogEvent(@{@"id":job.uuid,@"stage":@"fallback",@"event":[preset isEqual:AVAssetExportPresetPassthrough]?@"avfoundation-passthrough":@"avfoundation-highestQuality"},NO);
+            }
+        }
+    });
+    __weak AVAssetExportSession *weakSession=session;
+    PVXOldAVExport(session,selector,^{
+        AVAssetExportSession *finished=weakSession;
+        NSError *error=finished.error;
+        NSError *underlying=error.userInfo[NSUnderlyingErrorKey];
+        NSNumber *code=@(error.code),*underlyingCode=@([underlying isKindOfClass:NSError.class]?underlying.code:0);
+        NSNumber *status=@(finished.status);
+        // Capture only codes/status, never NSError userInfo or signed URLs.
+        dispatch_async(dispatch_get_main_queue(),^{
+            for(PVXRecoveryJob *job in [RecoveryExports.allValues copy]) {
+                NSString *expected=[NSString stringWithFormat:@"%@.%@.recovery.mp4",job.uuid,job.nonce];
+                if([leaf isEqual:expected]&&[outputPath isEqual:Path([@"media" stringByAppendingPathComponent:expected])])
+                    PVXLogEvent(@{@"id":job.uuid,@"stage":@"fallback",@"event":[preset isEqual:AVAssetExportPresetPassthrough]?@"avfoundation-passthrough-finished":@"avfoundation-highestQuality-finished",@"errorCode":code,@"underlyingErrorCode":underlyingCode,@"exportStatus":status},NO);
+            }
+        });
+        if(completion)completion();
+    });
 }
