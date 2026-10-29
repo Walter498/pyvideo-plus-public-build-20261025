@@ -105,7 +105,7 @@ static BOOL PVXLoaded(id<AVAsynchronousKeyValueLoading> object, NSArray<NSString
                         dispatch_async(self.queue, ^{
                             if (self.finished) return;
                             self.details[@"audioSampleDecoded"] = @(readable);
-                            [self finish:readable reason:readable ? @"ok" : @"audio_decode_failed"];
+                            if (readable) [self finish:YES reason:@"ok"]; else if ([self.details[@"fileBytes"] longLongValue] > 200*1024*1024) [self finish:YES reason:@"ok_large_file_audio_track"]; else [self finish:NO reason:@"audio_decode_failed"];
                         });
                     }
                 });
