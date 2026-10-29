@@ -95,7 +95,8 @@ def test_source_guards():
     assert 'PVRemuxHLSWithCancel' in (ROOT/'storage/PVXNativeRemux.m').read_text()
     assert 'recovery-started' in recovery
     assert 'pvxRecoveryActive' in recovery and 'PVXRecoveryHeartbeat' in recovery
-    assert 'live[@"state"]=@"paused";' in recovery
+    assert 'live[@"state"]=@"checking";' in recovery
+    assert 'audioDecodeSkipped' in (ROOT/'storage/PVXMediaValidator.m').read_text()
     assert 'if(job&&[action isEqual:@"resume"])return YES;' in recovery
     libav_input=(ROOT/'storage/PVXLibavInput.m').read_text()
     assert 'PVXRepairRepeatedAudioPESFile' in libav_input
