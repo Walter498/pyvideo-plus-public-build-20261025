@@ -107,6 +107,8 @@ def test_source_guards():
     assert 'PVXFetchTaskThumbnail(linked?r[@"linkedTask"]:r,' in ui
     assert 'if(collect&&!self.metadataRequested&&NSDate.date.timeIntervalSince1970>=self.metadataRetryAfter)' in ui
     assert 'PVXFetchMediaMetadata(r,' in ui
+    assert '导出诊断日志' not in ui
+    assert 'collectionCache' in ui and 'conversionFinishedFrom:' in ui
     assert 'PVXMetadataTakeDelivery(&state,timeout)' in metadata and 'if(manifest)return' not in metadata
     print("PASS source: GET/ImageIO metadata, no-playlist recovery, collection thumbnail trigger")
 
