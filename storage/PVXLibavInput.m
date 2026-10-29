@@ -60,7 +60,7 @@ static BOOL PVXRepairRepeatedAudioPESInner(NSString *source,NSString *destinatio
             if(payload&&pid==audio&&start){
                 endPES();
                 uint64_t pts=(off+14<=188&&(q[off+7]&0x80))?PVXPTS(q+off+9):0;
-                BOOL dup=(prevFrames>0)&&(pts<=prevLast);
+                BOOL dup=(prevFrames>0)&&(pts<=prevLast+960);
                 if(dup){changedAny=YES;}
                 curPTS=pts;curFrames=0;curRate=0;inPES=YES;accLen=0;
                 if(dup){continue;} /* drop duplicate PES start packet */
