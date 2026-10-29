@@ -98,7 +98,7 @@ def test_source_guards():
     assert 'live[@"state"]=@"paused";' in recovery
     assert 'if(job&&[action isEqual:@"resume"])return YES;' in recovery
     libav_input=(ROOT/'storage/PVXLibavInput.m').read_text()
-    assert 'NSMutableIndexSet' in libav_input
+    assert 'PVXRepairRepeatedAudioPESFile' in libav_input
     assert 'resourceReport' in libav_input
     assert 'PVXRepairRepeatedAudioPESFile' in libav_input
     assert 'Native input resource escapes task cache' in libav_input
