@@ -67,9 +67,9 @@ static BOOL PVXRepairRepeatedAudioPESInner(NSString *source,NSString *destinatio
                 if(dup){continue;} /* drop duplicate PES start packet */
             }
             if(payload&&pid==audio&&inPES){
-                if(start&&accLen>=9){NSUInteger h=9+acc[8];if(h<=accLen){memmove(acc,acc+h,accLen-h);accLen-=h;}}
                 NSUInteger n=188-off;const unsigned char *b=q+off;
                 if(accLen+n<=sizeof(acc)){memcpy(acc+accLen,b,n);accLen+=n;}
+                if(start&&accLen>=9){NSUInteger h=9+acc[8];if(h<=accLen){memmove(acc,acc+h,accLen-h);accLen-=h;}}
                 NSUInteger pos=0;
                 while(accLen-pos>=7){const unsigned char *f=acc+pos;if(f[0]!=0xff||(f[1]&0xf6)!=0xf0)break;NSUInteger idx=(f[2]>>2)&15;static const NSUInteger rates[]={96000,88200,64000,48000,44100,32000,24000,22050,16000,12000,11025,8000,7350};if(idx>=13)break;NSUInteger fl=(((NSUInteger)f[3]&3)<<11)|((NSUInteger)f[4]<<3)|((f[5]>>5)&7);if(fl<7||pos+fl>accLen)break;if(!curFrames)curRate=rates[idx];curFrames++;pos+=fl;}
                 if(pos){memmove(acc,acc+pos,accLen-pos);accLen-=pos;}
