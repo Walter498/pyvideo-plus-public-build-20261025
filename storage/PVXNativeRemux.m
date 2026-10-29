@@ -1,4 +1,5 @@
 #import "PVXNativeRemux.h"
+#import <AVFoundation/AVFoundation.h>
 #import <mach-o/dyld.h>
 #import <dlfcn.h>
 #import <dispatch/dispatch.h>
@@ -67,6 +68,47 @@ static pthread_mutex_t *PVXVerifiedSharedMutex(void) {
 }
 #include "PVXNativeProbe.inc"
 
+// The original Agent has a strict final gate that rejects some valid long
+// HLS inputs (for example 60 fps Main-profile 2+ GiB VOD). Keep that native
+// path first. Only after its explicit INVALIDDATA result and an independent
+// input probe succeeds, use Apple's passthrough exporter on the same private
+// local playlist. No transcoding or output publication happens here.
+static BOOL PVXAVFoundationExport(NSString *inputPath, NSString *outputPath,
+    NSString *preset, PVXNativeRemuxCancellation *cancellation, NSString **failure) {
+    if (failure) *failure = nil;
+    if (cancellation.isCancelled) { if (failure) *failure = @"AVFoundation fallback 调用前已取消"; return NO; }
+    AVURLAsset *asset=[AVURLAsset URLAssetWithURL:[NSURL fileURLWithPath:inputPath]
+        options:@{AVURLAssetPreferPreciseDurationAndTimingKey:@YES}];
+    AVAssetExportSession *session=[[AVAssetExportSession alloc]
+        initWithAsset:asset presetName:preset];
+    if (!session) { if (failure) *failure=[NSString stringWithFormat:@"AVFoundation %@ exporter 不可用",preset]; return NO; }
+    session.outputURL=[NSURL fileURLWithPath:outputPath];
+    session.outputFileType=AVFileTypeMPEG4;
+    session.shouldOptimizeForNetworkUse=NO;
+    __block BOOL finished=NO;
+    __block AVAssetExportSessionStatus finalStatus=AVAssetExportSessionStatusUnknown;
+    __block NSError *finalError=nil;
+    [session exportAsynchronouslyWithCompletionHandler:^{
+        finalStatus=session.status; finalError=session.error; finished=YES;
+    }];
+    NSTimeInterval deadline=NSDate.date.timeIntervalSince1970+3600.0;
+    while (!finished) {
+        if (cancellation.isCancelled) { [session cancelExport]; if (failure) *failure=@"AVFoundation fallback 已取消"; return NO; }
+        if (NSDate.date.timeIntervalSince1970>=deadline) { [session cancelExport]; if (failure) *failure=@"AVFoundation fallback 超时"; return NO; }
+        struct timespec delay={0,100000000}; nanosleep(&delay,NULL);
+    }
+    if (finalStatus!=AVAssetExportSessionStatusCompleted) {
+        if (failure) *failure=finalError.localizedDescription?:[NSString stringWithFormat:@"AVFoundation fallback 状态 %ld",(long)finalStatus];
+        return NO;
+    }
+    struct stat st={0};
+    if (lstat(outputPath.fileSystemRepresentation,&st)||!S_ISREG(st.st_mode)||st.st_size<=0) {
+        if (failure) *failure=@"AVFoundation fallback 没有生成有效 MP4";
+        return NO;
+    }
+    return YES;
+}
+
 BOOL PVXNativeRemuxHLS(NSString *inputPath, NSString *outputPath, NSString **errorText) {
     return PVXNativeRemuxHLSWithCancellation(inputPath, outputPath, nil, NULL, errorText);
 }
@@ -77,7 +119,8 @@ BOOL PVXNativeRemuxHLSWithCancellation(NSString *inputPath, NSString *outputPath
     NSString *stage = @"validate", *message = nil;
     NSDictionary *probe=nil;
     int rc = 0;
-    BOOL called = NO, locked = NO, success = NO;
+    BOOL called = NO, locked = NO, success = NO, fallbackAttempted = NO, fallbackSuccess = NO;
+    NSString *fallbackError = nil;
     pthread_mutex_t *mutex = NULL;
     const char *input = inputPath.fileSystemRepresentation;
     const char *output = outputPath.fileSystemRepresentation;
@@ -125,7 +168,22 @@ BOOL PVXNativeRemuxHLSWithCancellation(NSString *inputPath, NSString *outputPath
         }
         if (rc < 0) {
             probe=PVXInputProbe(input);
-            message = detail ?: @"原生封装返回负错误码（内部 open/find/DTS 阶段未知）"; goto done;
+            // Preserve all original Agent checks. AVFoundation is considered
+            // only for the Agent's explicit INVALIDDATA gate after input
+            // probing has already confirmed a readable media stream.
+            BOOL probeOK=[probe[@"available"] boolValue]&&
+                [probe[@"openReturn"] intValue]==0&&[probe[@"streamInfoReturn"] intValue]==0;
+            if (probeOK&&!cancellation.isCancelled) {
+                unlink(output); fallbackAttempted=YES; stage=@"avfoundation-fallback";
+                fallbackSuccess=PVXAVFoundationExport(inputPath,outputPath,AVAssetExportPresetPassthrough,cancellation,&fallbackError);
+                if (!fallbackSuccess&&!cancellation.isCancelled) {
+                    unlink(output); NSString *transcodeError=nil;
+                    fallbackSuccess=PVXAVFoundationExport(inputPath,outputPath,AVAssetExportPresetHighestQuality,cancellation,&transcodeError);
+                    if (!fallbackSuccess&&transcodeError.length) fallbackError=[NSString stringWithFormat:@"%@; 转码回退：%@",fallbackError?:@"passthrough失败",transcodeError];
+                }
+                if (fallbackSuccess) { success=YES; stage=@"complete"; goto done; }
+            }
+            message = fallbackError.length ? fallbackError : (detail ?: @"原生封装返回负错误码（内部 open/find/DTS 阶段未知）"); goto done;
         }
     }
     stage = @"output";
@@ -144,6 +202,8 @@ done:
             @"success": @(success), @"internalStage": @"unknown",
             @"sharedLockVerified": @(mutex != NULL)} mutableCopy];
         if (called) d[@"nativeReturn"] = @(rc);
+        if (fallbackAttempted) { d[@"avfoundationFallbackAttempted"]=@YES; d[@"avfoundationFallbackSuccess"]=@(fallbackSuccess); }
+        if (fallbackError.length) d[@"avfoundationFallbackError"]=fallbackError;
         if (probe) d[@"independentProbe"]=probe;
         if (message) d[@"detail"] = message;
         *diagnostic = d;

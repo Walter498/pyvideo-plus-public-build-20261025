@@ -107,6 +107,8 @@ def test_source_guards():
     assert 'PVXFetchTaskThumbnail(linked?r[@"linkedTask"]:r,' in ui
     assert 'if(collect&&!self.metadataRequested&&NSDate.date.timeIntervalSince1970>=self.metadataRetryAfter)' in ui
     assert 'PVXFetchMediaMetadata(r,' in ui
+    assert 'AVAssetExportPresetPassthrough' in (ROOT/'storage/PVXNativeRemux.m').read_text()
+    assert 'AVAssetExportPresetHighestQuality' in (ROOT/'storage/PVXNativeRemux.m').read_text()
     assert '导出诊断日志' not in ui
     assert 'collectionCache' in ui and 'conversionFinishedFrom:' in ui
     assert 'PVXMetadataTakeDelivery(&state,timeout)' in metadata and 'if(manifest)return' not in metadata
