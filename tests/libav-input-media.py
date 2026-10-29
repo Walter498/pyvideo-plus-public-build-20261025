@@ -43,6 +43,7 @@ def main():
     ff('-f', 'lavfi', '-i', 'testsrc2=size=160x96:rate=12', '-f', 'lavfi', '-i',
        'sine=frequency=440:sample_rate=44100', '-t', '2', '-c:v', 'libx264',
        '-threads', '1', '-g', '12', '-keyint_min', '12', '-sc_threshold', '0',
+       '-bf', '0', '-force_key_frames', 'expr:gte(t,n_forced)',
        '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '64k', '-f', 'segment',
        '-segment_time', '1', '-reset_timestamps', '0', fixture / 'part-%02d.ts')
     for index, name in enumerate(('a', 'b')):

@@ -164,12 +164,12 @@ static void PVXLogSetup(void) {
 }
 static NSDictionary *PVXLogFields(NSDictionary *source) {
     NSMutableDictionary *safe=[NSMutableDictionary dictionary];
-    for(NSString *key in @[@"received",@"total",@"mediaBytes",@"segmentsDone",@"segmentsTotal",@"conversionProgress",@"nativeReturn",@"nativeResult",@"errorCode",@"nativeCalled",@"underlyingErrorCode",@"exportStatus",@"success",@"sharedLockVerified",@"videoWidth",@"videoHeight",@"videoDuration",@"duration",@"expectedDuration",@"requireAudio",@"hasAudio",@"videoFramesDecoded",@"audioSampleDecoded",@"audioDecodeSkipped",@"fileBytes",@"valid",@"fullDecode",@"avfoundationFallbackAttempted",@"avfoundationFallbackSuccess",@"taskPersisted",@"pvxRecoveryActive"]) {
+    for(NSString *key in @[@"received",@"total",@"mediaBytes",@"segmentsDone",@"segmentsTotal",@"conversionProgress",@"concatAttempted",@"concatBytes",@"primaryNativeReturn",@"concatSegmentsDone",@"concatSegmentsTotal",@"nativeReturn",@"nativeResult",@"errorCode",@"nativeCalled",@"underlyingErrorCode",@"exportStatus",@"success",@"sharedLockVerified",@"videoWidth",@"videoHeight",@"videoDuration",@"duration",@"expectedDuration",@"requireAudio",@"hasAudio",@"videoFramesDecoded",@"audioSampleDecoded",@"audioDecodeSkipped",@"fileBytes",@"valid",@"fullDecode",@"avfoundationFallbackAttempted",@"avfoundationFallbackSuccess",@"taskPersisted",@"pvxRecoveryActive"]) {
         id value=source[key];if([value isKindOfClass:NSNumber.class]&&isfinite([value doubleValue]))safe[key]=value;
     }
     if(ValidID(source[@"id"]))safe[@"id"]=source[@"id"];
     NSCharacterSet *bad=[NSCharacterSet characterSetWithCharactersInString:@"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_."].invertedSet;
-    for(NSString *key in @[@"state",@"stage",@"event",@"reason",@"validationScope",@"pvxRecoveryStage",@"pvxRecoveryVersion"]) {
+    for(NSString *key in @[@"state",@"stage",@"event",@"reason",@"inputMode",@"primaryInputMode",@"validationScope",@"pvxRecoveryStage",@"pvxRecoveryVersion"]) {
         id value=source[key];if([value isKindOfClass:NSString.class]&&[value length]<=64&&[value rangeOfCharacterFromSet:bad].location==NSNotFound)safe[key]=value;
     }
     return safe;

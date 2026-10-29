@@ -83,11 +83,7 @@ static BOOL PVXRepairRepeatedAudioPESInner(NSString *source,NSString *destinatio
         if(ferror(in)){failure=@"Cannot read TS repair source";systemError=errno;ok=NO;break;}
         if(!length)break;
         if(!applicable){
-            if(input[0]!=0x47){
-                // Non-TS media is a supported no-op, not a failed TS scan.
-                if([source.pathExtension.lowercaseString isEqualToString:@"ts"]){failure=@"Invalid TS sync byte";ok=NO;}
-                break;
-            }
+            if(input[0]!=0x47)break; // Encrypted segments may retain a .ts extension.
             applicable=YES;
             // Exclusive creation prevents truncating the source, including an
             // existing hard-link alias. Only delete files we actually created.
@@ -156,9 +152,14 @@ static BOOL PVXRepairRepeatedAudioPESInner(NSString *source,NSString *destinatio
 }
 static BOOL PVXRepairRepeatedAudioPESFile(NSString *source,NSString *destination,BOOL *changed,NSError **error) {
     // One pool per file, never one pool (or NSData allocation) per TS packet.
+    NSError *failure=nil;BOOL result=NO;
     @autoreleasepool {
-        return PVXRepairRepeatedAudioPESInner(source,destination,changed,error);
+        NSError *inner=nil;
+        result=PVXRepairRepeatedAudioPESInner(source,destination,changed,&inner);
+        failure=inner;
     }
+    if(error)*error=failure;
+    return result;
 }
 
 @implementation PVXFileProtocolInput

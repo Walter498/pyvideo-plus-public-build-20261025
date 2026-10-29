@@ -184,6 +184,9 @@ static void PVXRecoverFailedHLS(id agent,NSDictionary *task) {
         if(!remuxed&&[nativeDetails[@"nativeReturn"] intValue]==-1094995529&&
            [playlist.pathExtension.lowercaseString isEqual:@"m3u8"]&&!job.cancelled){
             concatAttempted=YES;
+            dispatch_sync(dispatch_get_main_queue(),^{
+                if(PVXRecoveryCurrent(agent,job)){job.stage=@"preparing";PVXRecoveryRecord(agent,job,@"preparing",nil);}
+            });
             NSError *concatError=nil;__block NSUInteger lastConcatLog=0;__block unsigned long long concatBytes=0,lastConcatBytes=0;
             NSURL *concat=PVXLibavInputContinuousTS(playlist,^{ return job.cancelled; },^(NSUInteger done,NSUInteger total,unsigned long long bytes){
                 concatBytes=bytes;
@@ -191,10 +194,14 @@ static void PVXRecoverFailedHLS(id agent,NSDictionary *task) {
                     lastConcatLog=done;lastConcatBytes=bytes;
                     PVXDiagnostic([NSString stringWithFormat:@"hls-%@-concat-progress",uuid],@{
                         @"id":uuid, @"event":@"continuous-ts-progress", @"stage":@"preparing",
-                        @"segmentsDone":@(done), @"segmentsTotal":@(total), @"received":@(bytes)});
+                        @"concatSegmentsDone":@(done), @"concatSegmentsTotal":@(total), @"concatBytes":@(bytes),
+                        @"segmentsDone":job.task[@"segmentsDone"]?:@0, @"segmentsTotal":job.task[@"segmentsTotal"]?:@0, @"received":job.task[@"received"]?:@0});
                 }
             },&concatError);
             if(concat){
+                dispatch_sync(dispatch_get_main_queue(),^{
+                    if(PVXRecoveryCurrent(agent,job)){job.stage=@"remuxing";PVXRecoveryRecord(agent,job,@"remuxing",nil);}
+                });
                 NSDictionary *concatDetails=nil;NSString *concatText=nil;
                 BOOL concatOK=PVXNativeRemuxHLSWithCancellation(concat.path,temporary,job.cancellation,&concatDetails,&concatText);
                 NSMutableDictionary *combined=[concatDetails mutableCopy]?:[NSMutableDictionary dictionary];
@@ -213,6 +220,7 @@ static void PVXRecoverFailedHLS(id agent,NSDictionary *task) {
         NSMutableDictionary *remuxDetails=[nativeDetails mutableCopy]?:[NSMutableDictionary dictionary];
         remuxDetails[@"event"]=remuxed?@"remux-success":@"remux-failed";
         remuxDetails[@"concatAttempted"]=@(concatAttempted);
+        for(NSString *key in @[@"segmentsDone",@"segmentsTotal",@"received",@"total"])remuxDetails[key]=job.task[key]?:@0;
         remuxDetails[@"nonce"]=job.nonce;remuxDetails[@"id"]=uuid;
         if(nativeError.length)remuxDetails[@"error"]=nativeError;
         PVXDiagnostic([NSString stringWithFormat:@"hls-%@-remux",uuid],remuxDetails);
