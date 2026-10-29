@@ -44,8 +44,9 @@ def main():
        'sine=frequency=440:sample_rate=44100', '-t', '2', '-c:v', 'libx264',
        '-threads', '1', '-g', '12', '-keyint_min', '12', '-sc_threshold', '0',
        '-bf', '0', '-force_key_frames', 'expr:gte(t,n_forced)',
-       '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '64k', '-f', 'segment',
-       '-segment_time', '1', '-reset_timestamps', '0', fixture / 'part-%02d.ts')
+       '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '64k', '-f', 'hls',
+       '-hls_time', '1', '-hls_list_size', '0', '-hls_segment_filename',
+       fixture / 'part-%02d.ts', fixture / 'index.m3u8')
     for index, name in enumerate(('a', 'b')):
         path = fixture / f'{name}.ts'
         path.write_bytes((fixture / f'part-{index:02d}.ts').read_bytes())

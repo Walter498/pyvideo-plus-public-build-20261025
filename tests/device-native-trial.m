@@ -19,6 +19,12 @@ __attribute__((constructor)) static void Trial(void) {
         NSDictionary *diagnostic=nil;NSString *failure=nil;
         NSString *output=[dir stringByAppendingPathComponent:@"native-trial.mp4"];
         BOOL success=playlist&&PVXNativeRemuxHLSWithCancellation(playlist.path,output,nil,&diagnostic,&failure);
+        NSDictionary *primaryDiagnostic=diagnostic;BOOL retried=NO;
+        if(!success&&[diagnostic[@"nativeReturn"] intValue]==-1094995529){
+            retried=YES;
+            NSURL *continuous=PVXLibavInputContinuousTS(playlist,nil,nil,&error);
+            if(continuous)success=PVXNativeRemuxHLSWithCancellation(continuous.path,output,nil,&diagnostic,&failure);
+        }
         __block BOOL validated=NO;__block NSDictionary *validation=nil;
         if(success){PVXValidateMediaFile(output,[localizer.summary[@"expectedDuration"] doubleValue],NO,^(BOOL ok,NSDictionary *d){validated=ok;validation=d;});while(!validation){[[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.2]];}}
         success=success&&validated;
@@ -27,6 +33,7 @@ __attribute__((constructor)) static void Trial(void) {
             @"image0Type":@(_dyld_get_image_header(0)->filetype),
             @"image0Name":[NSString stringWithUTF8String:_dyld_get_image_name(0)],
             @"identifiedAgent":@(expected!=NULL),@"summary":localizer.summary?:@{},
+            @"primaryDiagnostic":primaryDiagnostic?:@{},@"continuousTSRetried":@(retried),
             @"diagnostic":diagnostic?:@{},@"validation":validation?:@{},@"error":failure?:error.localizedDescription?:@"",
             @"output":output,@"inputReport":PVXLibavInputLastReport()?:@{},@"scope":@"isolated-copy-original-iOS-libav-no-task-publication"} mutableCopy];
         NSData *json=[NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:NULL];
