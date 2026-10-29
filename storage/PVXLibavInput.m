@@ -66,6 +66,7 @@ static BOOL PVXRepairRepeatedAudioPESInner(NSString *source,NSString *destinatio
                 if(dup){continue;} /* drop duplicate PES start packet */
             }
             if(payload&&pid==audio&&inPES){
+                if(start&&accLen>=9){NSUInteger h=9+acc[8];if(h<=accLen){memmove(acc,acc+h,accLen-h);accLen-=h;}}
                 NSUInteger n=188-off;const unsigned char *b=q+off;
                 if(accLen+n<=sizeof(acc)){memcpy(acc+accLen,b,n);accLen+=n;}
                 NSUInteger pos=0;
