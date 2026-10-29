@@ -103,7 +103,7 @@ int main(int argc, const char **argv) {
                 CHECK([aliases isEqual:Generated()], [NSString stringWithFormat:@"retry failure leaked/removed files: %@", Generated()]);
             } else {
                 CHECK(continuous && !error && [continuous.pathExtension isEqual:@"ts"], @"explicit retry returns direct TS, no one-segment m3u8 wrapper");
-                CHECK([continuous.path.stringByDeletingLastPathComponent isEqual:root], @"retry remains in cache");
+                CHECK([continuous.path.stringByDeletingLastPathComponent.stringByResolvingSymlinksInPath isEqual:root.stringByResolvingSymlinksInPath], @"retry remains in cache");
                 NSData *bytes = [NSData dataWithContentsOfURL:continuous];
                 CHECK(bytes.length >= 188 && ((const unsigned char *)bytes.bytes)[0] == 0x47 && bytes.length % 188 == 0, @"physical TS packets");
                 CHECK([bytes writeToFile:[NSString stringWithUTF8String:argv[3]] atomically:YES], @"retain production TS for independent probe/decode");
