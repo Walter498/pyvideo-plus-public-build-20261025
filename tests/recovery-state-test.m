@@ -36,7 +36,9 @@ static NSString *Cache(void) { return Path([NSString stringWithFormat:@"media/%@
 static NSString *Diagnostic(NSString *suffix) {
     return Path([NSString stringWithFormat:@"plus-diagnostics/hls-%@-%@.plist",CurrentID,suffix]);
 }
+static void FlushDiagnostics(void){PVXLogSetup();dispatch_sync(PVXLogQueue,^{});}
 static NSDictionary *ReadDiagnostic(NSString *suffix) {
+    FlushDiagnostics();
     return [NSDictionary dictionaryWithContentsOfFile:Diagnostic(suffix)];
 }
 static BOOL MockWrite(id value, NSString *path, NSError **error) {
