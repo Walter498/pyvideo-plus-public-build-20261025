@@ -23,7 +23,7 @@ CC="xcrun --sdk iphoneos clang -arch arm64e -isysroot $SDK -miphoneos-version-mi
 CXX="xcrun --sdk iphoneos clang++ -arch arm64e -isysroot $SDK -miphoneos-version-min=15.0 -stdlib=libc++"
 CFLAGS="-Os -fvisibility=hidden"
 CXXFLAGS="-Os -fvisibility=hidden -stdlib=libc++"
-LDFLAGS="-arch arm64e -isysroot $SDK -miphoneos-version-min=15.0"
+LDFLAGS="-arch arm64e -isysroot $SDK -miphoneos-version-min=15.0 -framework Security"
 PKG_CONFIG=/usr/bin/false
 export PKG_CONFIG
 ./configure --host=arm-apple-darwin --disable-werror --enable-static --disable-shared --disable-nls --disable-libxml2 --without-gnutls --without-openssl --without-appletls --without-wintls --without-libgcrypt --without-libcares --disable-rpc --disable-websocket --disable-metalink --without-sqlite3 CC="$CC" CXX="$CXX" CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS -Wno-deprecated-declarations" LDFLAGS="$LDFLAGS"
