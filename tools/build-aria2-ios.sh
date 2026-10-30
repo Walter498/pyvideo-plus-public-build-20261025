@@ -18,8 +18,12 @@ CXX="xcrun --sdk iphoneos clang++ -arch arm64e -isysroot $SDK -miphoneos-version
 CFLAGS="-Os -fvisibility=hidden"
 CXXFLAGS="-Os -fvisibility=hidden -stdlib=libc++"
 LDFLAGS="-arch arm64e -isysroot $SDK -miphoneos-version-min=15.0"
+PKG_CONFIG=/usr/bin/false
+export PKG_CONFIG
 ./configure --host=arm-apple-darwin --enable-static --disable-shared --disable-nls --disable-libxml2 --without-gnutls --without-openssl --without-appletls --without-wintls --without-libgcrypt --without-libcares --disable-rpc --disable-websocket --disable-metalink --without-sqlite3 CC="$CC" CXX="$CXX" CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" LDFLAGS="$LDFLAGS"
-make -j2 src/aria2c
-cp src/aria2c "$ROOT/build/PyVideoAria2c"
+make -j2
+BIN="$(find . -type f -name aria2c -perm -111 | head -1)"
+if [ -z "$BIN" ]; then echo 'aria2c binary not found' >&2; exit 1; fi
+cp "$BIN" "$ROOT/build/PyVideoAria2c"
 chmod 755 "$ROOT/build/PyVideoAria2c"
 file "$ROOT/build/PyVideoAria2c"
