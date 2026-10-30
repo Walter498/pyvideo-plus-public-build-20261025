@@ -67,6 +67,12 @@ jobs:
         run: |
           xcrun --sdk iphoneos clang -target arm64e-apple-ios15.0 -dynamiclib -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -Istorage tests/device-native-trial.m storage/PVXHLSLocalizer.m storage/PVXHLSManifest.m storage/PVXLibavInput.m storage/PVXNativeRemux.m storage/PVXMediaValidator.m -framework Foundation -framework AVFoundation -framework CoreMedia -framework CoreVideo -framework CoreGraphics -install_name @rpath/PVXNativeTrial.dylib -o build/PVXNativeTrial.dylib
           codesign --force --sign - build/PVXNativeTrial.dylib
+      - name: Compile isolated on-device player watchdog probe
+        if: ${{ !cancelled() }}
+        run: |
+          mkdir -p build/PVXPlayerTrial.app
+          cp tests/device-player-trial-Info.plist build/PVXPlayerTrial.app/Info.plist
+          xcrun --sdk iphoneos clang -target arm64e-apple-ios15.0 -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -Isrc tests/device-player-trial.m -o build/PVXPlayerTrial.app/PVXPlayerTrial -framework Foundation -framework UIKit -framework WebKit -framework AVFoundation -framework AVFAudio -framework AVKit -framework CoreMedia -framework CoreVideo -framework CoreGraphics
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -77,6 +83,8 @@ jobs:
             build/PyVideoStorage.dylib
             build/cloud-build.json
             build/PVXNativeTrial.dylib
+            build/PVXPlayerTrial.app/PVXPlayerTrial
+            build/PVXPlayerTrial.app/Info.plist
             tests/webkit-beta3-output/**/*.txt
             tests/webkit-beta3-output/**/artifacts.json
             tests/webkit-beta3-output/**/*.png
