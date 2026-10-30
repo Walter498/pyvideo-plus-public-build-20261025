@@ -26,7 +26,7 @@ CXXFLAGS="-Os -fvisibility=hidden -stdlib=libc++"
 LDFLAGS="-arch arm64e -isysroot $SDK -miphoneos-version-min=15.0"
 PKG_CONFIG=/usr/bin/false
 export PKG_CONFIG
-./configure --host=arm-apple-darwin --disable-werror --enable-static --disable-shared --disable-nls --disable-libxml2 --without-gnutls --without-openssl --without-appletls --without-wintls --disable-rpc --disable-websocket --disable-metalink --without-sqlite3 CC="$CC" CXX="$CXX" CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS -Wno-deprecated-declarations" LDFLAGS="$LDFLAGS"
+./configure --host=arm-apple-darwin --disable-werror --enable-static --disable-shared --disable-nls --disable-libxml2 --without-gnutls --without-openssl --without-appletls --without-wintls --without-libgcrypt --without-libcares --disable-rpc --disable-websocket --disable-metalink --without-sqlite3 CC="$CC" CXX="$CXX" CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS -Wno-deprecated-declarations" LDFLAGS="$LDFLAGS"
 make -j2
 BIN="$(find . -type f -name aria2c -perm -111 | head -1)"
 if [ -z "$BIN" ]; then echo 'aria2c binary not found' >&2; exit 1; fi
