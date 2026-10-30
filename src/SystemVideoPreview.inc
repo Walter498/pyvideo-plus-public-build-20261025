@@ -88,7 +88,8 @@ static void PVXPresentSystemVideoWithSource(NSURL *url,NSDictionary *options,NSD
         present();
         return;
     }
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,20*NSEC_PER_SEC),dispatch_get_main_queue(),^{if(!finished){finished=YES;PVXAlert(@"视频读取超时",@"未能在 20 秒内读取视频轨道，请检查媒体源或登录状态。");}});
+    // No delayed "video read timeout" alert. AVFoundation/player status is the
+    // authoritative failure signal; a slow but valid source must remain silent.
     [asset loadValuesAsynchronouslyForKeys:@[@"tracks",@"playable",@"duration"] completionHandler:^{dispatch_async(dispatch_get_main_queue(),present);}];
 }
 static void PVXPresentSystemVideo(NSURL *url,NSDictionary *options) {PVXPresentSystemVideoWithSource(url,options,nil);}
@@ -99,7 +100,7 @@ static void PVXOpenRemoteSystemVideo(NSDictionary *row) {
     NSURL *page=[frame isKindOfClass:NSString.class]?[NSURL URLWithString:frame]:nil;
     if(!web.window||!url.host.length||url.user.length||url.password.length||!page.host.length||![@[@"http",@"https"] containsObject:url.scheme.lowercaseString]){PVXAlert(@"视频无法播放",@"本地文件已不存在，或原始网页已关闭。请重新采集或下载。");return;}
     __weak WKWebView *origin=web;NSString *owner=[web.URL.absoluteString copy];__block BOOL finished=NO;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,12*NSEC_PER_SEC),dispatch_get_main_queue(),^{if(!finished){finished=YES;PVXAlert(@"读取视频超时",@"原网页未返回播放信息，请重新采集后重试。");}});
+    // Source validation may be slow; do not convert a delay into a false timeout popup.
     PVXValidateCollected(web,row,^(BOOL valid,NSString *agent){if(finished)return;if(!valid){finished=YES;PVXAlert(@"视频来源已改变",@"请重新采集后再观看。");return;}
         [web.configuration.websiteDataStore.httpCookieStore getAllCookies:^(NSArray<NSHTTPCookie*> *cookies){dispatch_async(dispatch_get_main_queue(),^{if(finished)return;WKWebView *current=origin;if(!current.window||![current.URL.absoluteString isEqual:owner]||PVXCollectionWebView()!=current){finished=YES;PVXAlert(@"视频来源失效",@"原始页面已关闭或切换。");return;}
             NSMutableArray *filtered=[NSMutableArray array];for(NSHTTPCookie *c in cookies)if(PVXPreviewCookie(c,url))[filtered addObject:c];
