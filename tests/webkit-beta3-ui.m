@@ -61,7 +61,7 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
     PVXRefreshCollection();
     NSString *base=NSProcessInfo.processInfo.environment[@"PVX_FIXTURE_URL"];
     Check([base hasPrefix:@"http://127.0.0.1:"],@"real localhost fixture URL supplied");
-    NSString *html=@"<!doctype html><html><head><title>WebKit beta3 fixture</title></head><body><img width='96' height='96' src='real.png' title='real image'><video width='160' height='90' preload='none' src='real.mp4' title='real video'></video><script>fetch('network.mp4').then(r=>r.arrayBuffer());const xhr=new XMLHttpRequest();xhr.open('GET','network.mp4');xhr.send();const ms=new MediaSource();const runtime=document.createElement('video');runtime.src=URL.createObjectURL(ms);runtime.title='MSE runtime fixture';document.body.appendChild(runtime);</script></body></html>";
+    NSString *html=@"<!doctype html><html><head><title>WebKit beta3 fixture</title></head><body><a href='magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=STARS-199.mp4'>Magnet</a><a href='https://keepshare.test/STARS-199'>KeepShare MP4</a><img width='96' height='96' src='real.png' title='real image'><video width='160' height='90' preload='none' src='real.mp4' title='real video'></video><script>fetch('network.mp4').then(r=>r.arrayBuffer());const xhr=new XMLHttpRequest();xhr.open('GET','network.mp4');xhr.send();const ms=new MediaSource();const runtime=document.createElement('video');runtime.src=URL.createObjectURL(ms);runtime.title='MSE runtime fixture';document.body.appendChild(runtime);</script></body></html>";
     [Web loadHTMLString:html baseURL:[NSURL URLWithString:base]];
     return YES;
 }
@@ -111,22 +111,31 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
 }
 - (void)testManager {
     PVXManager *m=self.manager; [m.view layoutIfNeeded];
-    Check(m.mainTabs.numberOfSegments==2&&m.mainTabs.bounds.size.width>0,@"actual mainTabs exists with download/collect segments");
+    Check(m.mainTabs.numberOfSegments==3&&m.mainTabs.bounds.size.width>0, @"actual mainTabs exists with download/collect/source segments");
     Check(!CGRectIntersectsRect(m.mainTabs.frame,m.closeButton.frame)&&!CGRectIntersectsRect(m.mainTabs.frame,m.moreButton.frame)&&CGRectGetMaxY(m.mainTabs.frame)<=CGRectGetMinY(m.spaceLabel.frame),@"mainTabs frame does not overlap header controls");
-    Check(CGRectGetMaxY(m.mediaTabs.frame)<=CGRectGetMinY(m.sectionLabel.frame)&&CGRectGetMaxY(m.feedback.frame)<=CGRectGetMinY(m.table.frame),@"filter and table layout do not overlap");Check(m.sortButton.menu.children.count==5,@"download and collect pages expose five-option native sort menu");Check(m.moreButton.menu.children.count==2,@"top-right native menu preserves batch and settings groups without display modes");Check([m tableView:m.table trailingSwipeActionsConfigurationForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]].performsFirstActionWithFullSwipe,@"list rows expose full-swipe delete");Check(!m.table.hidden&&[NSUserDefaults.standardUserDefaults objectForKey:@"com.crctdd.pyvideo.plus.gridMode"]==nil,@"legacy grid preference migrates to visible list-only UI");for(UIView *child in m.view.subviews)Check(![child isKindOfClass:UICollectionView.class],@"manager never creates a grid view");Check(![m respondsToSelector:NSSelectorFromString(@"setGridMode:")],@"removed icon-mode setter cannot reactivate a grid");
+    Check(CGRectGetMaxY(m.mediaTabs.frame)<=CGRectGetMinY(m.sectionLabel.frame)&&CGRectGetMaxY(m.feedback.frame)<=CGRectGetMinY(m.table.frame),@"filter and table layout do not overlap");Check(m.sortButton.menu.children.count==5,@"download and collect pages expose five-option native sort menu");Check(m.moreButton.menu.children.count==3, @"top-right native menu preserves batch, source and settings groups");Check([m tableView:m.table trailingSwipeActionsConfigurationForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]].performsFirstActionWithFullSwipe,@"list rows expose full-swipe delete");Check(!m.table.hidden&&[NSUserDefaults.standardUserDefaults objectForKey:@"com.crctdd.pyvideo.plus.gridMode"]==nil,@"legacy grid preference migrates to visible list-only UI");for(UIView *child in m.view.subviews)Check(![child isKindOfClass:UICollectionView.class],@"manager never creates a grid view");Check(![m respondsToSelector:NSSelectorFromString(@"setGridMode:")],@"removed icon-mode setter cannot reactivate a grid");
     m.mainTabs.selectedSegmentIndex=1; [m.mainTabs sendActionsForControlEvents:UIControlEventValueChanged];
     Wait(100,^BOOL{ return m.rows.count>=3; },^{
         Check(m.table.numberOfSections==1&&[m.table numberOfRowsInSection:0]>=3,@"collect all shows DOM and dynamic network media rows");
-        m.mediaTabs.selectedSegmentIndex=2; [m.mediaTabs sendActionsForControlEvents:UIControlEventValueChanged];
-        Wait(100,^BOOL{return m.rows.count==1&&[m.rows[0][@"kind"] isEqual:@"image"];},^{
-            Check(YES,@"collect image filter asynchronously resolves one image");
-            m.mediaTabs.selectedSegmentIndex=1;[m.mediaTabs sendActionsForControlEvents:UIControlEventValueChanged];
-            Wait(100,^BOOL{return m.rows.count>=2&&[m.rows[0][@"kind"] isEqual:@"video"];},^{
-                Check(YES,@"collect video filter asynchronously resolves one video");
-                m.mediaTabs.selectedSegmentIndex=0;[m.mediaTabs sendActionsForControlEvents:UIControlEventValueChanged];
-                Wait(100,^BOOL{return m.rows.count>=3;},^{[self testSelectionAfterFilters];},@"all media filter restored");
-            },@"video filter snapshot");
-        },@"image filter snapshot");
+        m.mainTabs.selectedSegmentIndex=2; [m.mainTabs sendActionsForControlEvents:UIControlEventValueChanged];
+        Wait(100,^BOOL{return m.rows.count>=4;},^{
+            Check(m.rows.count>=4, @"source tab exposes direct and page-level source rows");
+            BOOL magnet=NO,cloud=NO;for(NSDictionary *source in m.rows){Check([source[@"kind"] isEqual:@"source"], @"source tab rows use independent source kind");magnet=magnet||[source[@"sourceKind"] isEqual:@"magnet"];cloud=cloud||[source[@"provider"] isEqual:@"KeepShare"];}
+            Check(magnet&&cloud, @"real fixture exposes validated magnet and KeepShare sources");
+            m.mainTabs.selectedSegmentIndex=1; [m.mainTabs sendActionsForControlEvents:UIControlEventValueChanged];
+            Wait(100,^BOOL{return m.rows.count>=3;},^{
+                m.mediaTabs.selectedSegmentIndex=2; [m.mediaTabs sendActionsForControlEvents:UIControlEventValueChanged];
+                Wait(100,^BOOL{return m.rows.count==1&&[m.rows[0][@"kind"] isEqual:@"image"];},^{
+                    Check(YES,@"collect image filter asynchronously resolves one image");
+                    m.mediaTabs.selectedSegmentIndex=1;[m.mediaTabs sendActionsForControlEvents:UIControlEventValueChanged];
+                    Wait(100,^BOOL{return m.rows.count>=2&&[m.rows[0][@"kind"] isEqual:@"video"];},^{
+                        Check(YES,@"collect video filter asynchronously resolves one video");
+                        m.mediaTabs.selectedSegmentIndex=0;[m.mediaTabs sendActionsForControlEvents:UIControlEventValueChanged];
+                        Wait(100,^BOOL{return m.rows.count>=3;},^{[self testSelectionAfterFilters];},@"all media filter restored");
+                    },@"video filter snapshot");
+                },@"image filter snapshot");
+            },@"collection restored after source tab");
+        },@"source tab snapshot");
     },@"collect all actual rows");
 }
 - (void)testSelectionAfterFilters {
