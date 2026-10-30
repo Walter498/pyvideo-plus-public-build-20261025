@@ -11,7 +11,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test original and enhanced collectors
-        run: node tests/collector.cjs
+        run: |
+          node tests/collector.cjs
+          node tests/source-collector.cjs
       - name: Run local HTTP, ImageIO and real FFmpeg media smoke tests
         run: |
           if ! command -v ffmpeg >/dev/null 2>&1; then brew install ffmpeg; fi
