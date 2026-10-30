@@ -64,6 +64,20 @@ check('preview reuses exact ready asset without claiming thumbnail success',
       'asset=ready?:[AVURLAsset URLAssetWithURL:u options:opts]' in m and
       'if(!borrowedAsset)[asset cancelLoading]' in m and
       'attempt!=assetAttempt' in m)
+check('magnet page is source-only and non-destructive',
+      'self.mainTabs.selectedSegmentIndex==2?@"magnet"' in u and
+      'self.batchDelete.hidden=self.mainTabs.selectedSegmentIndex>0' in u and
+      'if(self.mainTabs.selectedSegmentIndex!=0)return' in u and
+      'm[@"provider"]=@"直接视频"' not in c and
+      'PVXSourceRows' in c and
+      'sourceKind"] isEqual:@"magnet"' in c)
+check('source rows retain poster, size and actual resolution hints',
+      'c[@"poster"]' in c and 'c[@"sizeText"]' in c and
+      'PVXRemoteURLQuality' in (ROOT/'src/MediaQuality.m').read_text() and
+      'PVXURLManifestQuality' in m and 'PVXResponseLength' in m)
+check('three-tab geometry reserves action buttons',
+      'tabLeft=left+54' in u and 'tabRight=right-104' in u and
+      'self.batchDelete.hidden?self.batchBar.bounds.size.width' in u)
 with tempfile.TemporaryDirectory(prefix='pvx-ui-list-') as tmp:
     binary = str(Path(tmp) / 'state')
     subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
