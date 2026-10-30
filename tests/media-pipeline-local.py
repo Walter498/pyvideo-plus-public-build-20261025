@@ -109,8 +109,10 @@ def test_source_guards():
     assert 'Native input resource escapes task cache' in libav_input
     assert 'sharedLockVerified' in (ROOT/'storage/PVXNativeRemux.m').read_text()
     assert 'PVXFetchTaskThumbnail(linked?r[@"linkedTask"]:r,' in ui
-    assert 'if(collect&&!self.metadataRequested&&NSDate.date.timeIntervalSince1970>=self.metadataRetryAfter)' in ui
+    assert 'if(collect&&!source&&!self.metadataRequested' in ui
     assert 'PVXFetchMediaMetadata(r,' in ui
+    assert 'PVXIsSourceRow' in ui and 'PVXSourceRows' in (ROOT/'src/Collection.m').read_text()
+    assert 'PVXOpenSystemVideo(NSDictionary *row) {if(![row isKindOfClass:NSDictionary.class]||![row[@"kind"] isEqual:@"video"])return;' in (ROOT/'src/SystemVideoPreview.inc').read_text()
     assert 'PVXAVFoundationExport' not in (ROOT/'storage/PVXNativeRemux.m').read_text()
     assert 'PVXLibavInputContinuousTS' in recovery
     collector=(ROOT/'resources/MediaCollector.js').read_text()

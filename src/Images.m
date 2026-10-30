@@ -6,6 +6,7 @@
 static NSString *const PVXBridgeName=@"pvx_media_v1";
 extern WKWebView *PVXCollectionWebView(void);
 NSArray<NSDictionary*> *PVXImageCollected(WKWebView *web);
+NSArray<NSDictionary*> *PVXCloudCollected(WKWebView *web);
 void PVXRefreshImages(WKWebView *web);
 extern void PVXSubmitMedia(NSDictionary *row,void(^completion)(NSDictionary *,NSString *));
 static char PVXConfigKey,PVXGalleryKey;
@@ -16,6 +17,7 @@ static NSMutableDictionary *PVXRuntimeWriters;
 + (instancetype)shared;
 - (void)configure:(WKWebViewConfiguration*)config;
 - (NSArray*)images;
+- (NSArray*)cloudForWeb:(WKWebView*)w;
 - (NSDictionary*)active;
 - (void)refresh;
 @end
@@ -52,7 +54,7 @@ static BOOL PVXRuntimeMessage(NSDictionary *m,WKWebView *web){
  NSMutableDictionary *map=[self.frames objectForKey:message.webView];if(!map){map=[NSMutableDictionary dictionary];[self.frames setObject:map forKey:message.webView];}NSString *owner=message.webView.URL.absoluteString?:@"";for(NSString *k in [map.allKeys copy]){NSDictionary *old=map[k];if(![old[@"owner"] isEqual:owner]||([old[@"frameURL"] isEqual:m[@"page"]]&&! [k isEqual:m[@"documentID"]]))[map removeObjectForKey:k];}if(map.count>=32&&!map[m[@"documentID"]])[map removeObjectForKey:map.allKeys.firstObject];
  NSMutableArray *videos=[NSMutableArray array];NSArray *videoRows=m[@"videos"];if([videoRows isKindOfClass:NSArray.class])for(id row in videoRows){if(![row isKindOfClass:NSDictionary.class]||!PVXImageURL(row[@"url"])||[row[@"url"] isEqual:m[@"page"]]||PVXMediaTransportSegment([NSString stringWithFormat:@"%@ %@",row[@"url"]?:@"",row[@"mime"]?:@""]))continue;NSString *protocol=PVXMediaProtocol(row[@"url"]),*mime=PVXString(row[@"mime"],180)?row[@"mime"]:@"";NSNumber *width=[row[@"width"] isKindOfClass:NSNumber.class]?row[@"width"]:@0;NSNumber *height=[row[@"height"] isKindOfClass:NSNumber.class]?row[@"height"]:@0;if(!protocol&&!mime.length&&![width integerValue]&&![height integerValue])continue;NSMutableArray *sources=[NSMutableArray array];for(id source in row[@"sources"]){if([source isKindOfClass:NSDictionary.class]&&PVXImageURL(source[@"url"])&&![source[@"url"] isEqual:m[@"page"]]&&!PVXMediaTransportSegment([NSString stringWithFormat:@"%@ %@",source[@"url"]?:@"",row[@"mime"]?:@""]))[sources addObject:@{ @"url":source[@"url"], @"height":[source[@"height"] respondsToSelector:@selector(integerValue)]?@(MAX(0,[source[@"height"] integerValue])):@0 }];}if(!sources.count)[sources addObject:@{ @"url":row[@"url"], @"height":height }];[videos addObject:@{ @"kind":@"video", @"url":row[@"url"], @"sources":sources, @"cloudSources":[row[@"cloudSources"] isKindOfClass:NSArray.class]?row[@"cloudSources"]:@[], @"width":width, @"height":height, @"protocol":protocol?:@"video", @"mime":mime, @"sourceKind":row[@"sourceKind"]?:@"network", @"title":PVXString(row[@"title"],180)?row[@"title"]:@"影片", @"poster":PVXImageURL(row[@"poster"])?row[@"poster"]:@"", @"page":m[@"page"], @"frame":m[@"page"], @"documentID":m[@"documentID"], @"key":[NSString stringWithFormat:@"%@|video|%@",m[@"documentID"],row[@"url"]] }];}
  NSMutableArray *runtime=[NSMutableArray array];for(id rr in m[@"runtime"]){if([rr isKindOfClass:NSDictionary.class]&&[rr[@"protocol"] isEqual:@"mse"])[runtime addObject:@{ @"kind":@"runtime", @"protocol":@"mse", @"mime":rr[@"mime"]?:@"", @"blob":rr[@"blob"]?:@"", @"title":rr[@"title"]?:@"当前运行时媒体" }];}
- NSMutableDictionary *snapshot=[@{ @"images":images, @"videos":videos, @"runtime":runtime, @"owner":owner, @"frameURL":m[@"page"], @"at":@(NSDate.date.timeIntervalSince1970), @"frameInfo":message.frameInfo } mutableCopy];
+ NSMutableDictionary *snapshot=[@{ @"images":images, @"videos":videos, @"cloudSources":[m[@"cloudSources"] isKindOfClass:NSArray.class]?m[@"cloudSources"]:@[], @"runtime":runtime, @"owner":owner, @"frameURL":m[@"page"], @"at":@(NSDate.date.timeIntervalSince1970), @"frameInfo":message.frameInfo } mutableCopy];
  NSDictionary *a=m[@"active"];
  if([a isKindOfClass:NSDictionary.class] && ([a[@"url"] isKindOfClass:NSString.class] || [a[@"blob"] boolValue])){
   NSMutableDictionary *active=[a mutableCopy];active[@"page"]=m[@"page"];active[@"documentID"]=m[@"documentID"];active[@"frame"]=m[@"page"];active[@"framePage"]=m[@"page"];active[@"receivedAt"]=snapshot[@"at"];snapshot[@"active"]=active;
@@ -63,6 +65,7 @@ static BOOL PVXRuntimeMessage(NSDictionary *m,WKWebView *web){
 - (NSArray*)imagesForWeb:(WKWebView*)w kind:(NSString*)kind{if(!w)return @[];NSString *owner=w.URL.absoluteString;NSMutableArray *rows=[NSMutableArray array];NSMutableSet *seen=[NSMutableSet set];for(NSDictionary *s in [[self.frames objectForKey:w] allValues]){if(![s[@"owner"] isEqual:owner])continue;for(NSDictionary *media in s[kind]){if(![seen containsObject:media[@"key"]]){[seen addObject:media[@"key"]];[rows addObject:media];if(rows.count>=600)return rows;}}}return rows;}
 - (NSArray*)images{return [self imagesForWeb:PVXCollectionWebView() kind:@"images"];}
 - (NSArray*)videosForWeb:(WKWebView*)w{return [self imagesForWeb:w kind:@"videos"];}
+- (NSArray*)cloudForWeb:(WKWebView*)w{if(!w)return @[];NSString *owner=w.URL.absoluteString;NSMutableArray *rows=[NSMutableArray array];NSMutableSet *seen=[NSMutableSet set];for(NSString *docID in [self.frames objectForKey:w]){NSDictionary *s=[self.frames objectForKey:w][docID];if(![s[@"owner"] isEqual:owner])continue;for(NSDictionary *raw in s[@"cloudSources"]){if(![raw isKindOfClass:NSDictionary.class]||![raw[@"url"] isKindOfClass:NSString.class])continue;NSString *key=raw[@"url"];if([seen containsObject:key])continue;NSMutableDictionary *row=[raw mutableCopy];row[@"documentID"]=docID;row[@"page"]=row[@"page"]?:s[@"frameURL"];[rows addObject:row];[seen addObject:key];if(rows.count>=600)return rows;}}return rows;}
 - (NSDictionary*)active{WKWebView *w=PVXCollectionWebView();NSDictionary *best=nil;for(NSDictionary *s in [[self.frames objectForKey:w] allValues]){if(![s[@"owner"] isEqual:w.URL.absoluteString])continue;NSDictionary *a=s[@"active"];if(!a)continue;BOOL foreground=[a[@"fullscreen"] boolValue]||[a[@"pip"] boolValue];BOOL bestForeground=[best[@"fullscreen"] boolValue]||[best[@"pip"] boolValue];if(!best||(foreground&&!bestForeground)||(foreground==bestForeground&&[a[@"at"] doubleValue]>[best[@"at"] doubleValue]))best=a;}return best;}
 - (void)mergeResourceURLs:(NSArray*)urls web:(WKWebView*)w {
     if(!w || ![urls isKindOfClass:NSArray.class] || !urls.count)return;
@@ -85,6 +88,7 @@ static BOOL PVXRuntimeMessage(NSDictionary *m,WKWebView *web){
 - (void)refresh{[self refreshForWeb:PVXCollectionWebView()];}
 @end
 NSArray<NSDictionary*> *PVXImageCollected(WKWebView *w){return [[PVXMediaBridge shared] imagesForWeb:w kind:@"images"];}
+NSArray<NSDictionary*> *PVXCloudCollected(WKWebView *w){return [[PVXMediaBridge shared] cloudForWeb:w];}
 NSArray<NSDictionary*> *PVXVideoCollected(WKWebView *w){return [[PVXMediaBridge shared] videosForWeb:w];}
 void PVXRefreshImages(WKWebView *w){[[PVXMediaBridge shared] configure:w.configuration];[[PVXMediaBridge shared] refreshForWeb:w];}
 static BOOL PVXSnapshotContainsURL(NSDictionary *snapshot,NSDictionary *row){

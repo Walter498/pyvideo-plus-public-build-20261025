@@ -54,7 +54,9 @@ check('cell rejects stale context, retries failure, preserves URL after async fi
       '![weakMetadata.metadataIdentity isEqual:metadataIdentity]' in u and
       'metadataRetryAfter=NSDate.date.timeIntervalSince1970+15' in u and
       '[NSString stringWithFormat:@"%@\\n%@",size,PVXText(r[@"url"])]' in u and
-      'if(collect&&!self.metadataRequested' in u)
+      'if(collect&&!source&&!self.metadataRequested' in u and
+      'PVXIsSourceRow' in u and
+      'PVXFetchMediaMetadata(r,' not in u.split('if(collect&&!source&&!self.metadataRequested',1)[0])
 check('preview reuses exact ready asset without claiming thumbnail success',
       'AVPlayerItemStatusReadyToPlay&&!self.metadataNotified&&self.sourceRow' in p and
       'postNotificationName:@"PVXPreviewAssetReady" object:asset' in p and

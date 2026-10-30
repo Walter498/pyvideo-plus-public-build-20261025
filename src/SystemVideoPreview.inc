@@ -111,7 +111,7 @@ static void PVXOpenRemoteSystemVideo(NSDictionary *row) {
     });
 }
 
-static void PVXOpenSystemVideo(NSDictionary *row) {
+static void PVXOpenSystemVideo(NSDictionary *row) {if(![row isKindOfClass:NSDictionary.class]||![row[@"kind"] isEqual:@"video"])return;
     __weak UIViewController *origin=PVXPresenter();
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
         NSString *path=PVXTaskPreviewLocalPath(row);
