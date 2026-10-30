@@ -68,7 +68,7 @@ static void PVXMakeFixture(NSString *path, void (^done)(BOOL)) {
 @implementation PVXTrialApp
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
     PVXAlerts = [NSMutableArray array];
-    PVXReportPath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"pvx-player-trial.json"];
+    PVXReportPath = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/pvx-player-trial.json"];
     self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
     PVXRootController = [UIViewController new];
     PVXRootController.view.backgroundColor = UIColor.whiteColor;
@@ -84,6 +84,11 @@ static void PVXMakeFixture(NSString *path, void (^done)(BOOL)) {
         if (!ok) { PVXWriteReport(@{@"success": @NO, @"error": @"fixture writer failed"}); return; }
         NSDictionary *row = @{@"kind": @"video", @"url": @"https://fixture.invalid/local.mp4", @"title": @"watchdog fixture"};
         PVXPresentSystemVideoWithSource([NSURL fileURLWithPath:file], @{}, row);
+        // Persist an early liveness marker so a suspended/terminated probe is distinguishable from a missing report.
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            AVPlayerViewController *player = (AVPlayerViewController *)PVXRootController.presentedViewController;
+            PVXWriteReport(@{@"phase": @"five-seconds", @"presented": @([player isKindOfClass:AVPlayerViewController.class]), @"alerts": PVXAlerts ?: @[]});
+        });
         // Hold beyond the old 20 s preflight deadline. A regression re-arms the
         // watchdog and calls PVXAlert, which this probe records as failure.
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 23 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
