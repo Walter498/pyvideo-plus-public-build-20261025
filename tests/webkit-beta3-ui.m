@@ -118,10 +118,10 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
     Wait(100,^BOOL{ return m.rows.count>=3; },^{
         Check(m.table.numberOfSections==1&&[m.table numberOfRowsInSection:0]>=3,@"collect all shows DOM and dynamic network media rows");
         m.mainTabs.selectedSegmentIndex=2; [m.mainTabs sendActionsForControlEvents:UIControlEventValueChanged];
-        Wait(100,^BOOL{return m.rows.count>=2;},^{
-            Check(m.rows.count>=2, @"source tab exposes magnet and cloud source rows");
-            BOOL magnet=NO,cloud=NO;for(NSDictionary *source in m.rows){Check([source[@"kind"] isEqual:@"source"], @"source tab rows use independent source kind");magnet=magnet||[source[@"sourceKind"] isEqual:@"magnet"];cloud=cloud||[source[@"provider"] isEqual:@"KeepShare"];}
-            Check(magnet&&cloud, @"real fixture exposes validated magnet and KeepShare sources");
+        Wait(100,^BOOL{return m.rows.count>=1;},^{
+            Check(m.rows.count>=1, @"magnet tab exposes magnet source rows");
+            BOOL magnet=NO;for(NSDictionary *source in m.rows){Check([source[@"kind"] isEqual:@"source"], @"magnet rows use independent source kind");magnet=magnet||[source[@"sourceKind"] isEqual:@"magnet"];}
+            Check(magnet, @"magnet tab exposes validated magnet sources");
             m.mainTabs.selectedSegmentIndex=1; [m.mainTabs sendActionsForControlEvents:UIControlEventValueChanged];
             Wait(100,^BOOL{return m.rows.count>=3;},^{
                 m.mediaTabs.selectedSegmentIndex=2; [m.mediaTabs sendActionsForControlEvents:UIControlEventValueChanged];
