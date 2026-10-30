@@ -323,6 +323,7 @@ void PVXUpdateTaskMetadata(NSArray<NSDictionary *> *tasks, NSString *field, NSSt
 
 static BOOL PVXQueueControl(NSDictionary *task, NSString *action, NSError **error) {
     if (!PVXUUID(task[@"id"]) || ![@[@"delete", @"pause", @"resume", @"retry"] containsObject:action]) return NO;
+    if ([task[@"backend"] isEqual:@"torrent"]){NSString *root=PVXRoot();NSString *dir=PVXPath(@"torrent-control");if(!root||![NSFileManager.defaultManager createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0700} error:error])return NO;NSString *rid=NSUUID.UUID.UUIDString;NSDictionary *cmd=@{@"id":rid,@"target":task[@"id"],@"action":action,@"created":@(NSDate.date.timeIntervalSince1970)};BOOL ok=PVXAtomic(cmd,[dir stringByAppendingPathComponent:[rid stringByAppendingPathExtension:@"plist"]],error);if(ok)notify_post("com.crctdd.pyvideo.torrent.queue");return ok;}
     if ([task[@"kind"] isEqual:@"image"]) {
         if (![action isEqual:@"delete"]) return NO;
         NSString *request = NSUUID.UUID.UUIDString;
@@ -344,7 +345,7 @@ void PVXDeleteTasks(NSArray<NSDictionary *> *tasks, void (^completion)(NSString 
         NSTimeInterval deadline=NSDate.date.timeIntervalSince1970+12;
         while(waiting.count && NSDate.date.timeIntervalSince1970<deadline){
             for(NSDictionary *task in [waiting copy]){
-                NSString *sub=[task[@"kind"] isEqual:@"image"]?@"image-tasks":@"tasks";
+                NSString *sub=[task[@"backend"] isEqual:@"torrent"]?@"torrent-tasks":([task[@"kind"] isEqual:@"image"]?@"image-tasks":@"tasks");
                 NSDictionary *state=PVXPlist(PVXPath([NSString stringWithFormat:@"%@/%@.plist",sub,task[@"id"]]));
                 if(![state[@"state"] isEqual:@"deleted"])continue;
                 NSString *uuid=task[@"id"],*organized=PVXOrganized(uuid,PVXMetadata(uuid));NSError *err=nil;
