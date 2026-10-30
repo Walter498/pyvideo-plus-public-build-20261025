@@ -87,7 +87,7 @@ static void PVXMakeFixture(NSString *path, void (^done)(BOOL)) {
         // Hold beyond the old 20 s preflight deadline. A regression re-arms the
         // watchdog and calls PVXAlert, which this probe records as failure.
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 23 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            AVPlayerViewController *player = PVXRootController.presentedViewController;
+            AVPlayerViewController *player = (AVPlayerViewController *)PVXRootController.presentedViewController;
             BOOL presented = [player isKindOfClass:AVPlayerViewController.class];
             NSTimeInterval position = presented ? CMTimeGetSeconds(player.player.currentTime) : -1;
             NSDictionary *report = @{
