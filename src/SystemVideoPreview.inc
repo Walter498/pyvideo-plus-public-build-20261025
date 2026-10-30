@@ -74,6 +74,9 @@ static void PVXPresentSystemVideoWithSource(NSURL *url,NSDictionary *options,NSD
             AVKeyValueStatus playableStatus=[asset statusOfValueForKey:@"playable" error:NULL];
             if(tracksStatus==AVKeyValueStatusFailed&&playableStatus==AVKeyValueStatusFailed){finished=YES;PVXAlert(@"视频无法预览",loadError.localizedDescription?:@"系统无法读取媒体清单或视频轨道。");return;}
         }
+        // Track acquisition has completed. The player now owns loading/playback;
+        // the preflight watchdog must never fire over a successfully opened player.
+        finished=YES;
         PVXSystemVideoSession *session=[PVXSystemVideoSession new];session.sourceRow=[sourceRow copy];
         AVAudioSession *audio=AVAudioSession.sharedInstance;session.previousCategory=audio.category;session.previousMode=audio.mode;session.previousOptions=audio.categoryOptions;NSError *error=nil;
         if(![audio setCategory:AVAudioSessionCategoryPlayback mode:AVAudioSessionModeMoviePlayback options:0 error:&error]||![audio setActive:YES error:&error]){finished=YES;if(session.previousCategory.length)[audio setCategory:session.previousCategory mode:session.previousMode options:session.previousOptions error:nil];PVXAlert(@"无法播放视频",error.localizedDescription?:@"无法启用系统音频会话。");return;}

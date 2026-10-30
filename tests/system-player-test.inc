@@ -44,14 +44,18 @@
                         [player.player pause];
                         [player.player seekToTime:CMTimeMakeWithSeconds(1.25,600) toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero completionHandler:^(BOOL finished){dispatch_async(dispatch_get_main_queue(),^{
                             Check(finished&&fabs(CMTimeGetSeconds(player.player.currentTime)-1.25)<.12,@"native AVPlayer seeking works on real clip");
-                            Capture(@"native-player",^{
-                                [self.manager dismissViewControllerAnimated:NO completion:^{
-                                    AVPlayer *old=player.player;
-                                    Wait(50,^BOOL{return player.player==nil&&old.rate==0;},^{
-                                        Check(YES,@"dismissing system player releases player and audio session owner");
-                                        [self verifyWatchdogSnapshot];
-                                    },@"system player session cleanup");
-                                }];
+                            // Keep the successfully opened player alive beyond the old 20s watchdog.
+                            // If the preflight completion state regresses, PVXAlert aborts this test.
+                            Later(21.0, ^{
+                                Capture(@"native-player", ^{
+                                    [self.manager dismissViewControllerAnimated:NO completion:^{
+                                        AVPlayer *old=player.player;
+                                        Wait(50,^BOOL{return player.player==nil&&old.rate==0;},^{
+                                            Check(YES,@"dismissing system player releases player and audio session owner");
+                                            [self verifyWatchdogSnapshot];
+                                        },@"system player session cleanup");
+                                    }];
+                                });
                             });
                         });}];
                     },@"real playback time advancing");
