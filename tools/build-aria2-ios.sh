@@ -26,6 +26,8 @@ CXXFLAGS="-Os -fvisibility=hidden -stdlib=libc++"
 LDFLAGS="-arch arm64e -isysroot $SDK -miphoneos-version-min=15.0 -framework Security"
 PKG_CONFIG=/usr/bin/false
 export PKG_CONFIG
+LIBS="-framework Security"
+export LIBS
 ./configure --host=arm-apple-darwin --disable-werror --enable-static --disable-shared --disable-nls --disable-libxml2 --without-gnutls --without-openssl --without-appletls --without-wintls --without-libgcrypt --without-libcares --disable-rpc --disable-websocket --disable-metalink --without-sqlite3 CC="$CC" CXX="$CXX" CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS -Wno-deprecated-declarations" LDFLAGS="$LDFLAGS"
 make -j2
 BIN="$(find . -type f -name aria2c -perm -111 | head -1)"
