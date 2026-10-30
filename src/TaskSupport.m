@@ -150,7 +150,7 @@ static long long PVXBytes(id v) { return [v isKindOfClass:NSNumber.class] ? MAX(
 
 static NSMutableDictionary *PVXPublicRow(NSDictionary *raw, NSString *kind) {
     NSMutableDictionary *row = [NSMutableDictionary dictionary];
-    for (NSString *key in @[@"id", @"state", @"title", @"error", @"uti", @"extension", @"width", @"height", @"pvxRecoveryStage", @"pvxRecoveryVersion"]) {
+    for (NSString *key in @[@"id", @"state", @"title", @"error", @"uti", @"extension", @"width", @"height", @"pvxRecoveryStage", @"pvxRecoveryVersion", @"backend", @"sourceKind", @"phase", @"metadataState", @"infoHash"]) {
         NSString *v = PVXSafeText(raw[key], [key isEqual:@"title"] ? 180 : 160);
         if (v.length) row[key] = v;
     }
@@ -172,7 +172,7 @@ static NSArray<NSDictionary *> *PVXScanVideoTasks(void) {
 #endif
     if (!PVXRoot()) return @[];
     NSMutableDictionary *rows = [NSMutableDictionary dictionary];
-    for (NSString *sub in @[@"tasks", @"image-tasks", @"inbox", @"image-inbox"]) {
+    for (NSString *sub in @[@"tasks", @"torrent-tasks", @"image-tasks", @"inbox", @"image-inbox"]) {
         NSString *dir = PVXPath(sub);
         BOOL inbox = [sub containsString:@"inbox"];
         NSString *kind = [sub hasPrefix:@"image-"] ? @"image" : @"video";

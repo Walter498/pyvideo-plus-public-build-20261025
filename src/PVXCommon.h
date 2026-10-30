@@ -48,6 +48,7 @@ FOUNDATION_EXPORT void PVXRefreshCollection(void);
 FOUNDATION_EXPORT void PVXSetCollectionWebView(WKWebView * _Nullable web);
 FOUNDATION_EXPORT WKWebView * _Nullable PVXCollectionWebView(void);
 FOUNDATION_EXPORT void PVXSubmitMedia(NSDictionary *candidate, void(^completion)(NSDictionary * _Nullable submitted, NSString * _Nullable error));
+FOUNDATION_EXPORT void PVXSubmitMagnet(NSDictionary *source, void(^completion)(NSDictionary * _Nullable submitted, NSString * _Nullable error));
 FOUNDATION_EXPORT void PVXExportTasks(NSArray<NSDictionary*> *tasks, UIView * _Nullable anchor);
 FOUNDATION_EXPORT void PVXExportDiagnostics(UIView * _Nullable anchor);
 FOUNDATION_EXPORT void PVXUpdateTaskMetadata(NSArray<NSDictionary*> *tasks, NSString *field, NSString *value);

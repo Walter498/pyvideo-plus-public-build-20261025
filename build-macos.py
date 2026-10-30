@@ -25,15 +25,21 @@ def frameworks(names):
  return out
 plugin_flags=flags+frameworks(plugin_frameworks)
 worker_flags=flags+frameworks(worker_frameworks)
-storage_flags=flags+frameworks(storage_frameworks)
+torrent_flags=['xcrun','--sdk','iphoneos','clang++','-arch','arm64e','-miphoneos-version-min=15.0','-isysroot',sdk,'-fobjc-arc','-fblocks','-stdlib=libc++','-Os','-Wall','-Wextra','-Werror','-Wno-unused-parameter','-Wno-deprecated-declarations','-I',P/'src']+frameworks(['Foundation'])
 plugin_sources=sources('plugin')
 run(plugin_flags+['-dynamiclib','-Wl,-install_name,@loader_path/PyVideoPlus.dylib','-o',B/'PyVideoPlus.dylib']+plugin_sources)
 run(worker_flags+['-o',B/'PyVideoPhotoWorker']+sources('photo_worker'))
+run(torrent_flags+['-o',B/'PyVideoBTWorker']+sources('torrent_worker'))
 run(storage_flags+['-dynamiclib','-Wl,-install_name,@executable_path/PyVideoStorage.dylib','-Wl,-rpath,@executable_path/Frameworks','-Wl,-rpath,@loader_path/../Frameworks','-o',B/'PyVideoStorage.dylib']+sources('storage'))
+# aria2 is fetched and built by the CI wrapper before this script.
+aria2=B/'PyVideoAria2c'
+if not aria2.is_file():raise RuntimeError('missing build/PyVideoAria2c; run tools/build-aria2-ios.sh first')
 info={'_source':source_contract(P)}
-for name in ['PyVideoPlus.dylib','PyVideoPhotoWorker','PyVideoStorage.dylib']:
+for name in ['PyVideoPlus.dylib','PyVideoPhotoWorker','PyVideoBTWorker','PyVideoStorage.dylib','PyVideoAria2c']:
  p=B/name;data=p.read_bytes();magic,cpu,sub,typ=struct.unpack_from('<IIII',data)
  assert magic==0xfeedfacf and cpu==0x100000c and sub&0xffffff==2,(name,hex(sub))
- run(['codesign','--force','--sign','-','--entitlements',P/'worker/entitlements.plist',p] if name=='PyVideoPhotoWorker' else ['codesign','--force','--sign','-',p])
+ if name=='PyVideoAria2c':
+  run(['codesign','--force','--sign','-',p]);run(['codesign','--verify','--strict',p]);info[name]={'size':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'cpuSubtype':hex(sub),'fileType':typ};continue
+ run(['codesign','--force','--sign','--entitlements',P/'worker/entitlements.plist',p] if name in ['PyVideoPhotoWorker','PyVideoBTWorker'] else ['codesign','--force','--sign','-',p])
  run(['codesign','--verify','--strict',p]);info[name]={'size':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'cpuSubtype':hex(sub),'fileType':typ}
 (B/'cloud-build.json').write_text(json.dumps(info,indent=2)+'\n');print(json.dumps(info,indent=2))

@@ -27,6 +27,8 @@ def verify(path,manifest_path,base_path):
     assert not any('/depiction/screenshot-' in p for p in files),'large screenshots still included'
     for name,installed in {'PyVideoPlus.dylib':'Library/MobileSubstrate/DynamicLibraries/PyVideoPlus.dylib',
         'PyVideoPhotoWorker':'Applications/PyVideoAgent.app/PyVideoPhotoWorker',
+        'PyVideoBTWorker':'Applications/PyVideoAgent.app/PyVideoBTWorker',
+        'PyVideoAria2c':'Applications/PyVideoAgent.app/PyVideoAria2c',
         'PyVideoStorage.dylib':'Applications/PyVideoAgent.app/PyVideoStorage.dylib'}.items():
         b=files[installed];assert hashlib.sha256(b).hexdigest()==manifest['build'][name]['sha256']
         assert struct.unpack_from('<III',b)==(0xfeedfacf,0x100000c,0x80000002)

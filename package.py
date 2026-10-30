@@ -27,12 +27,14 @@ def place(source,destination,mode=0o644):
  target=STAGE/destination;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(Path(source).read_bytes());target.chmod(mode)
 cloud=json.loads((P/'build/cloud-build.json').read_text())
 assert cloud.get('_source',{}).get('productionSHA256')==source_contract(P)['productionSHA256'],'cloud artifacts built from different production sources'
-for name in ['PyVideoPlus.dylib','PyVideoPhotoWorker','PyVideoStorage.dylib']:
+for name in ['PyVideoPlus.dylib','PyVideoPhotoWorker','PyVideoBTWorker','PyVideoAria2c','PyVideoStorage.dylib']:
  p=P/'build'/name;data=p.read_bytes();cpu,sub=struct.unpack_from('<II',data,4)
  assert cpu==0x100000c and sub&0xffffff==2,'not genuine arm64e: '+name
  assert hashlib.sha256(data).hexdigest()==cloud[name]['sha256'],'artifact differs from cloud signature: '+name
 place(P/'build/PyVideoPlus.dylib','Library/MobileSubstrate/DynamicLibraries/PyVideoPlus.dylib',0o755)
 place(P/'build/PyVideoPhotoWorker','Applications/PyVideoAgent.app/PyVideoPhotoWorker',0o755)
+place(P/'build/PyVideoBTWorker','Applications/PyVideoAgent.app/PyVideoBTWorker',0o755)
+place(P/'build/PyVideoAria2c','Applications/PyVideoAgent.app/PyVideoAria2c',0o755)
 place(P/'resources/MediaCollector.js','Library/Application Support/PyVideo/MediaCollector.js')
 for old in ['screenshot-1.jpeg','screenshot-2.png','screenshot-3.png','screenshot-4.png','screenshot-5.png']:
  (STAGE/'Library/Application Support/PyVideo/depiction'/old).unlink(missing_ok=True)
@@ -81,7 +83,8 @@ agentpatch={'path':'Applications/PyVideoAgent.app/PyVideoAgent','exportContract'
 addon={'Filter':{'Bundles':['com.apple.mobilesafari']}}
 (STAGE/'Library/MobileSubstrate/DynamicLibraries/PyVideoPlus.plist').write_bytes(plistlib.dumps(addon,fmt=plistlib.FMT_BINARY))
 job={'Label':'com.crctdd.pyvideo.photo-worker','ProgramArguments':['/Applications/PyVideoAgent.app/PyVideoPhotoWorker','--worker'],'UserName':'mobile','RunAtLoad':True,'KeepAlive':True,'ThrottleInterval':10,'ProcessType':'Background','JetsamProperties':{'JetsamMemoryLimit':192}}
-photo=STAGE/'Library/LaunchDaemons/com.crctdd.pyvideo.photo-worker.plist';photo.write_bytes(plistlib.dumps(job,fmt=plistlib.FMT_BINARY));photo.chmod(0o644)
+torrent_job={'Label':'com.crctdd.pyvideo.torrent-worker','ProgramArguments':['/Applications/PyVideoAgent.app/PyVideoBTWorker','--worker'],'UserName':'mobile','RunAtLoad':True,'KeepAlive':True,'ThrottleInterval':10,'ProcessType':'Background','JetsamProperties':{'JetsamMemoryLimit':256}}
+torrent=STAGE/'Library/LaunchDaemons/com.crctdd.pyvideo.torrent-worker.plist';torrent.write_bytes(plistlib.dumps(torrent_job,fmt=plistlib.FMT_BINARY));torrent.chmod(0o644)
 control=STAGE/'DEBIAN/control';raw=control.read_text();raw=raw.replace('Name: PyVideo\n','Name: Safari亚瑟下载\n').replace('Version: 0.0.3\n',f'Version: {VERSION}\n');start=raw.index('Description:');end=raw.index('Maintainer:',start);raw=raw[:start]+'''Description: 让Safari获得某些类似亚瑟浏览器的功能，能够在画中画中直接下载影片，或者在网站中采集图片及影片以下载，长按搜索栏或点击画中画中的菜单开始使用\n'''+raw[end:];raw=re.sub(r'^Author: .*$', 'Author: 水甲嫩鸡', raw, flags=re.M);raw=re.sub(r'^Maintainer: .*$', 'Maintainer: 水甲嫩鸡', raw, flags=re.M);raw+='Depiction: file:///Library/Application%20Support/PyVideo/depiction/index.html\n';control.write_text(raw)
 post=STAGE/'DEBIAN/postinst';text=post.read_text();assert text.endswith('exit 0\n');text=text[:-7]+'''pv_stage=photo-storage-permissions
 for pv_child in image-inbox image-tasks image-media; do
@@ -96,10 +99,16 @@ chown root:wheel "$pv_photo_job"
 chmod 644 "$pv_photo_job"
 launchctl bootout system/com.crctdd.pyvideo.photo-worker >/dev/null 2>&1 || true
 launchctl bootstrap system "$pv_photo_job" || launchctl load "$pv_photo_job"
-launchctl print system/com.crctdd.pyvideo.photo-worker >/dev/null
+pv_stage=torrent-worker-registration
+pv_torrent_job="$pv_prefix/Library/LaunchDaemons/com.crctdd.pyvideo.torrent-worker.plist"
+chown root:wheel "$pv_torrent_job"
+chmod 644 "$pv_torrent_job"
+launchctl bootout system/com.crctdd.pyvideo.torrent-worker >/dev/null 2>&1 || true
+launchctl bootstrap system "$pv_torrent_job" || launchctl load "$pv_torrent_job"
+launchctl print system/com.crctdd.pyvideo.torrent-worker >/dev/null
 exit 0
 ''';post.write_text(text);post.chmod(0o755)
-pre=STAGE/'DEBIAN/prerm';text=pre.read_text();text=text.replace('  launchctl bootout system/com.crctdd.pyvideo.worker','  launchctl bootout system/com.crctdd.pyvideo.photo-worker >/dev/null 2>&1 || true\n  launchctl bootout system/com.crctdd.pyvideo.worker');pre.write_text(text);pre.chmod(0o755)
+pre=STAGE/'DEBIAN/prerm';text=pre.read_text();text=text.replace('  launchctl bootout system/com.crctdd.pyvideo.worker','  launchctl bootout system/com.crctdd.pyvideo.torrent-worker >/dev/null 2>&1 || true\n  launchctl bootout system/com.crctdd.pyvideo.photo-worker >/dev/null 2>&1 || true\n  launchctl bootout system/com.crctdd.pyvideo.worker');pre.write_text(text);pre.chmod(0o755)
 # Original core binaries, Collector.js and routing filters are byte-identical.
 unchanged=[]
 for original in (ORIG/'rootfs').rglob('*'):
@@ -117,7 +126,7 @@ for archive,prefix in [('data',''),('control','DEBIAN/')]:
   for m in tf.getmembers():
    rel=m.name.removeprefix('./').rstrip('/')
    if rel:modes[prefix+rel]=m.mode
-for rel in ['Applications/PyVideoAgent.app/PyVideoAgent','Library/MobileSubstrate/DynamicLibraries/PyVideoPlus.dylib','Applications/PyVideoAgent.app/PyVideoPhotoWorker','Applications/PyVideoAgent.app/PyVideoStorage.dylib','DEBIAN/postinst','DEBIAN/prerm','DEBIAN/postrm']:modes[rel]=0o755
+for rel in ['Applications/PyVideoAgent.app/PyVideoAgent','Library/MobileSubstrate/DynamicLibraries/PyVideoPlus.dylib','Applications/PyVideoAgent.app/PyVideoPhotoWorker','Applications/PyVideoAgent.app/PyVideoBTWorker','Applications/PyVideoAgent.app/PyVideoAria2c','Applications/PyVideoAgent.app/PyVideoStorage.dylib','Library/LaunchDaemons/com.crctdd.pyvideo.photo-worker.plist','Library/LaunchDaemons/com.crctdd.pyvideo.torrent-worker.plist','DEBIAN/postinst','DEBIAN/prerm','DEBIAN/postrm']:modes[rel]=0o755
 allfiles=[Path(x) for x in subprocess.check_output(['rg','--files','-uuu',str(STAGE)],text=True).splitlines()]
 size=sum(p.stat().st_size for p in allfiles if 'DEBIAN' not in p.relative_to(STAGE).parts)
 control.write_text(re.sub(r'Installed-Size: .*',f'Installed-Size: {(size+1023)//1024}',control.read_text()))
