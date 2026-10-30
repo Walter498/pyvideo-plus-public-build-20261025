@@ -26,6 +26,7 @@ def frameworks(names):
 plugin_flags=flags+frameworks(plugin_frameworks)
 worker_flags=flags+frameworks(worker_frameworks)
 torrent_flags=['xcrun','--sdk','iphoneos','clang++','-arch','arm64e','-miphoneos-version-min=15.0','-isysroot',sdk,'-fobjc-arc','-fblocks','-stdlib=libc++','-Os','-Wall','-Wextra','-Werror','-Wno-unused-parameter','-Wno-deprecated-declarations','-I',P/'src']+frameworks(['Foundation'])
+storage_flags=flags+frameworks(storage_frameworks)
 plugin_sources=sources('plugin')
 run(plugin_flags+['-dynamiclib','-Wl,-install_name,@loader_path/PyVideoPlus.dylib','-o',B/'PyVideoPlus.dylib']+plugin_sources)
 run(worker_flags+['-o',B/'PyVideoPhotoWorker']+sources('photo_worker'))
