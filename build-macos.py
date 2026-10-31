@@ -41,6 +41,6 @@ for name in ['PyVideoPlus.dylib','PyVideoPhotoWorker','PyVideoBTWorker','PyVideo
  assert magic==0xfeedfacf and cpu==0x100000c and sub&0xffffff==2,(name,hex(sub))
  if name=='PyVideoAria2c':
   run(['codesign','--force','--sign','-',p]);run(['codesign','--verify','--strict',p]);info[name]={'size':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'cpuSubtype':hex(sub),'fileType':typ};continue
- run(['codesign','--force','--sign','--entitlements',P/'worker/entitlements.plist',p] if name in ['PyVideoPhotoWorker','PyVideoBTWorker'] else ['codesign','--force','--sign','-',p])
+ run(['codesign','--force','--sign','-','--entitlements',P/'worker/entitlements.plist',p] if name in ['PyVideoPhotoWorker','PyVideoBTWorker'] else ['codesign','--force','--sign','-',p])
  run(['codesign','--verify','--strict',p]);info[name]={'size':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'cpuSubtype':hex(sub),'fileType':typ}
 (B/'cloud-build.json').write_text(json.dumps(info,indent=2)+'\n');print(json.dumps(info,indent=2))
