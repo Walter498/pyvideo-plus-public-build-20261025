@@ -11,8 +11,9 @@ checks={
 for k,p in checks.items():
  assert (ROOT/p).is_file(),p
 s=(ROOT/'btworker/main.mm').read_text()
-for x in ['torrent-inbox','torrent-tasks','torrent-control','PyVideoAria2c','bt-metadata-only=true','bt-save-metadata=true','enable-dht=true','media/%@.mp4','backend','calloc(args.count+1','flock(lock,LOCK_EX|LOCK_NB)','PVXMapped','PVXRoot(NSString *override)']:
+for x in ['torrent-inbox','torrent-tasks','torrent-control','PyVideoAria2c','bt-save-metadata=true','enable-dht=true','bt-stop-timeout=600','PVXPlayable','media/%@.mp4','backend','calloc(args.count+1','flock(lock,LOCK_EX|LOCK_NB)','PVXMapped','PVXRoot(NSString *override)']:
  assert x in s,x
+assert 'bt-metadata-only=true' not in s
 assert '@"\\0"' not in s
 m=(ROOT/'config/build-manifest.json').read_text()
 assert 'torrent_worker' in m and 'btworker/main.mm' in m

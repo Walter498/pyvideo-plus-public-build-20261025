@@ -25,7 +25,7 @@ def frameworks(names):
  return out
 plugin_flags=flags+frameworks(plugin_frameworks)
 worker_flags=flags+frameworks(worker_frameworks)
-torrent_flags=['xcrun','--sdk','iphoneos','clang++','-arch','arm64e','-miphoneos-version-min=15.0','-isysroot',sdk,'-fobjc-arc','-fblocks','-stdlib=libc++','-Os','-Wall','-Wextra','-Werror','-Wno-unused-parameter','-Wno-deprecated-declarations','-I',P/'src']+frameworks(['Foundation'])
+torrent_flags=['xcrun','--sdk','iphoneos','clang++','-arch','arm64e','-miphoneos-version-min=15.0','-isysroot',sdk,'-fobjc-arc','-fblocks','-stdlib=libc++','-Os','-Wall','-Wextra','-Werror','-Wno-unused-parameter','-Wno-deprecated-declarations','-I',P/'src']+frameworks(['Foundation','AVFoundation','CoreMedia'])
 storage_flags=flags+frameworks(storage_frameworks)
 plugin_sources=sources('plugin')
 run(plugin_flags+['-dynamiclib','-Wl,-install_name,@loader_path/PyVideoPlus.dylib','-o',B/'PyVideoPlus.dylib']+plugin_sources)
@@ -41,6 +41,6 @@ for name in ['PyVideoPlus.dylib','PyVideoPhotoWorker','PyVideoBTWorker','PyVideo
  assert magic==0xfeedfacf and cpu==0x100000c and sub&0xffffff==2,(name,hex(sub))
  if name=='PyVideoAria2c':
   run(['codesign','--force','--sign','-',p]);run(['codesign','--verify','--strict',p]);info[name]={'size':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'cpuSubtype':hex(sub),'fileType':typ};continue
- run(['codesign','--force','--sign','-','--entitlements',P/'worker/entitlements.plist',p] if name in ['PyVideoPhotoWorker','PyVideoBTWorker'] else ['codesign','--force','--sign','-',p])
+ run(['codesign','--force','--sign','-','--entitlements',P/'worker/entitlements.plist',p] if name in ['PyVideoPhotoWorker','PyVideoBTWorker','PyVideoAria2c'] else ['codesign','--force','--sign','-',p])
  run(['codesign','--verify','--strict',p]);info[name]={'size':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'cpuSubtype':hex(sub),'fileType':typ}
 (B/'cloud-build.json').write_text(json.dumps(info,indent=2)+'\n');print(json.dumps(info,indent=2))

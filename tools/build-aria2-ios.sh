@@ -41,7 +41,7 @@ if not q.is_file(): raise SystemExit('aria2 source layout changed: missing metad
 t=q.read_text()
 needle='if (util::saveAs(filename, torrent)) {'
 if t.count(needle)!=1: raise SystemExit('aria2 metadata save anchor changed')
-t=t.replace(needle,'if (util::saveAs(filename, torrent, true))')
+t=t.replace(needle,'if (util::saveAs(filename, torrent, true)) {')
 q.write_text(t)
 PY
 if [ -f Makefile ]; then make distclean >/dev/null 2>&1 || true; fi
