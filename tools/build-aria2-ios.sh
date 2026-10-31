@@ -50,11 +50,28 @@ LIBS="-framework Security"
 export LIBS
 ./configure --host=arm-apple-darwin --disable-werror --enable-static --disable-shared --disable-nls --disable-libxml2 --without-gnutls --without-openssl --without-appletls --without-wintls --without-libgcrypt --without-libcares --disable-rpc --disable-websocket --disable-metalink --without-sqlite3 CC="$CC" CXX="$CXX" CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS -Wno-deprecated-declarations" LDFLAGS="$LDFLAGS"
 make -j2
-BIN="$SRC/src/.libs/aria2c"
-if [ ! -x "$BIN" ]; then
-  echo "aria2 binary missing: $BIN" >&2
-  exit 1
-fi
+BIN="$(python3 - "$SRC" <<'PY'
+import os, subprocess, sys
+root=sys.argv[1]
+hits=[]
+for directory, _, names in os.walk(root):
+    if "aria2c" not in names:
+        continue
+    path=os.path.join(directory,"aria2c")
+    if not os.access(path,os.X_OK):
+        continue
+    try:
+        description=subprocess.check_output(["file","-b",path],text=True)
+    except Exception:
+        continue
+    if "Mach-O" in description and "executable" in description:
+        hits.append(path)
+if not hits:
+    raise SystemExit("aria2 Mach-O executable not found after link")
+hits.sort(key=lambda p:("/.libs/" not in p, len(p)))
+print(hits[0])
+PY
+)"
 cp "$BIN" "$ROOT/build/PyVideoAria2c"
 chmod 755 "$ROOT/build/PyVideoAria2c"
 file "$ROOT/build/PyVideoAria2c" | tee "$OUT/aria2-file.txt"

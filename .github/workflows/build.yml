@@ -14,15 +14,15 @@ jobs:
         run: |
           node tests/collector.cjs
           node tests/source-collector.cjs
+      - name: Install build and media test dependencies
+        run: brew install autoconf automake libtool pkg-config gettext ffmpeg
       - name: Build static aria2 BitTorrent engine
         if: ${{ !cancelled() }}
         run: |
-          brew install autoconf automake libtool pkg-config gettext
           python3 tests/torrent-worker-contract.py
           sh tools/build-aria2-ios.sh
       - name: Run local HTTP, ImageIO and real FFmpeg media smoke tests
         run: |
-          if ! command -v ffmpeg >/dev/null 2>&1; then brew install ffmpeg; fi
           python3 tests/media-pipeline-local.py
           python3 tests/media-metadata-regression.py
           python3 tests/ui-list-regression.py
