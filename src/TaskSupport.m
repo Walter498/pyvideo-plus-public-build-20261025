@@ -1,5 +1,6 @@
-#if defined(PVX_FOUNDATION_TEST)
+#import <notify.h>
 #import <Foundation/Foundation.h>
+#if defined(PVX_FOUNDATION_TEST)
 extern NSString *PVXStateRoot(void);
 extern void PVXAlert(NSString *, NSString *);
 #else
