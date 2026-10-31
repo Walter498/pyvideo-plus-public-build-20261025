@@ -116,8 +116,12 @@ def main():
     selected = next((d for d in phones if d['state'] == 'Booted'), phones[0])
     udid = selected['udid']
     (out / 'simulator.json').write_text(json.dumps(selected, indent=2))
-    if selected['state'] != 'Booted':
-        run(['xcrun', 'simctl', 'boot', udid])
+    # macOS 15 images may leave a previously booted device in Data Migration /
+    # Waiting on System App. A dedicated clean simulator avoids simctl launch
+    # hanging before the test process is ever started.
+    run(['xcrun', 'simctl', 'shutdown', udid], timeout=120)
+    run(['xcrun', 'simctl', 'erase', udid], timeout=240)
+    run(['xcrun', 'simctl', 'boot', udid])
     run(['xcrun', 'simctl', 'bootstatus', udid, '-b'], timeout=240)
     run(['xcrun', 'simctl', 'install', udid, app])
     container = Path(run(['xcrun', 'simctl', 'get_app_container', udid, BUNDLE, 'data']))
