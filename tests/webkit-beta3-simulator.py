@@ -119,7 +119,8 @@ def main():
     # macOS 15 images may leave a previously booted device in Data Migration /
     # Waiting on System App. A dedicated clean simulator avoids simctl launch
     # hanging before the test process is ever started.
-    run(['xcrun', 'simctl', 'shutdown', udid], timeout=120)
+    if selected['state'] == 'Booted':
+        run(['xcrun', 'simctl', 'shutdown', udid], timeout=120)
     run(['xcrun', 'simctl', 'erase', udid], timeout=240)
     run(['xcrun', 'simctl', 'boot', udid])
     run(['xcrun', 'simctl', 'bootstatus', udid, '-b'], timeout=240)
