@@ -36,6 +36,13 @@ for needle in ('  SocketCore::setClientTLSContext(nullptr);\n','  SocketCore::se
     if s.count(needle)!=1: raise SystemExit('aria2 no-TLS patch anchor changed: '+needle.strip())
     s=s.replace(needle,'')
 p.write_text(s)
+q=Path('src/UTMetadataPostDownloadHandler.cc')
+if not q.is_file(): raise SystemExit('aria2 source layout changed: missing metadata handler')
+t=q.read_text()
+needle='if (util::saveAs(filename, torrent)) {'
+if t.count(needle)!=1: raise SystemExit('aria2 metadata save anchor changed')
+t=t.replace(needle,'if (util::saveAs(filename, torrent, true))')
+q.write_text(t)
 PY
 if [ -f Makefile ]; then make distclean >/dev/null 2>&1 || true; fi
 rm -f config.status
