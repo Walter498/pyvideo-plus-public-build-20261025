@@ -20,6 +20,11 @@ if [ "$(git rev-parse HEAD)" != "$ARIA2_REF" ]; then
 fi
 git reset --hard "$ARIA2_REF" >/dev/null
 git clean -fdx >/dev/null
+GETTEXT_PREFIX="$(brew --prefix gettext 2>/dev/null || true)"
+if [ -n "$GETTEXT_PREFIX" ]; then export PATH="$GETTEXT_PREFIX/bin:$GETTEXT_PREFIX/sbin:$PATH"; fi
+command -v autoreconf >/dev/null
+command -v autopoint >/dev/null || { echo 'gettext autopoint is required' >&2; exit 1; }
+autoreconf -f -i
 # aria2's no-TLS configure path in current release leaves two teardown calls
 # outside ENABLE_SSL; remove those calls for the iOS no-TLS build.
 python3 - <<'PY'
