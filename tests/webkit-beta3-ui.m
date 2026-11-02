@@ -127,6 +127,7 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
             Check(m.rows.count>=1, @"magnet tab exposes magnet source rows");
             BOOL magnet=NO;for(NSDictionary *source in m.rows){Check([source[@"kind"] isEqual:@"source"], @"magnet rows use independent source kind");magnet=magnet||[source[@"sourceKind"] isEqual:@"magnet"];}
             Check(magnet, @"magnet tab exposes validated magnet sources");
+            [self testMagnetProducer:^{
             m.mainTabs.selectedSegmentIndex=1; [m.mainTabs sendActionsForControlEvents:UIControlEventValueChanged];
             Wait(100,^BOOL{return m.rows.count>=3;},^{
                 m.mediaTabs.selectedSegmentIndex=2; [m.mediaTabs sendActionsForControlEvents:UIControlEventValueChanged];
@@ -140,8 +141,77 @@ void PVXAlert(NSString *title, NSString *message) { Check(NO,[NSString stringWit
                     },@"video filter snapshot");
                 },@"image filter snapshot");
             },@"collection restored after source tab");
+            }];
         },@"source tab snapshot");
     },@"collect all actual rows");
+}
+- (void)testMagnetProducer:(dispatch_block_t)done {
+    PVXManager *m=self.manager;
+    NSDictionary *pageSource=m.rows.firstObject;
+    Check([pageSource[@"sourceKind"] isEqual:@"magnet"]&&PVXMagnetInfoHash(pageSource[@"url"])!=nil,@"WebKit page source remains validated magnet, never direct fallback");
+    NSString *hash=@"0123456789abcdef0123456789abcdef01234567";
+    NSString *url=@"magnet:?xt=urn%3Abtih%3A0123456789ABCDEF0123456789ABCDEF01234567&dn=Native&xl=2097152";
+    NSDictionary *source=PVXCanonicalSource(@{@"url":url},@{@"page":Web.URL.absoluteString,@"title":@"Native producer",@"width":@1920,@"height":@1080,@"protocol":@"hls"});
+    Check([source[@"infoHash"] isEqual:hash]&&[source[@"sourceKey"] isEqual:[@"btih:" stringByAppendingString:hash]],@"encoded xt canonicalizes to lowercase btih source identity");
+    Check(!source[@"width"]&&!source[@"height"]&&!source[@"poster"]&&[source[@"sizeVerified"] isEqual:@NO],@"magnet cannot inherit trailer dimensions and xl is explicitly unverified");
+    NSMutableDictionary *linked=[source mutableCopy];linked[@"linkedTask"]=self.ready;
+    for(NSNumber *mode in @[@1,@2]){
+        m.mainTabs.selectedSegmentIndex=mode.integerValue;[m applyFilter:NO];
+        Check(![m tableView:m.table canEditRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]]&&![m tableView:m.table trailingSwipeActionsConfigurationForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]]&&m.batchDelete.hidden&&!m.batchDelete.enabled,@"all source tabs hide swipe and batch deletion");
+        for(UIMenuElement *item in [m rowMenu:linked].children)Check(![item.title isEqual:@"删除"],@"linked source native menu has no delete action");
+        for(UIMenuElement *item in [m rowMenu:@{@"kind":@"video",@"linkedTask":self.ready}].children)Check(![item.title isEqual:@"删除"],@"linked collected video native menu has no delete action");
+        [m deleteSelected];Check(!m.presentedViewController,@"source deleteSelected is a no-op");
+    }
+    [m showMenu:@[linked] anchor:m.moreButton];
+    Check([m.presentedViewController isKindOfClass:UIAlertController.class],@"source fallback menu is presented");
+    for(UIAlertAction *action in ((UIAlertController *)m.presentedViewController).actions)Check(![action.title isEqual:@"删除"],@"source fallback alert menu has no delete control");
+    Later(.5, ^{ [m dismissViewControllerAnimated:NO completion:^{
+    NSArray *titles=[[m rowMenu:source].children valueForKey:@"title"];
+    Check([titles containsObject:@"加入磁力下载队列"]&&[titles containsObject:@"复制磁力链接"]&&[titles containsObject:@"导出链接"],@"magnet menu offers explicit queue, copy and export actions");
+    for(NSDictionary *bad in @[@{@"kind":@"video",@"sourceKind":@"magnet",@"url":@"https://example.test/a.mp4"},@{@"kind":@"video",@"url":@"https://example.test/a.torrent?x=1"},@{@"kind":@"source",@"url":@"https://example.test/a.mp4"},@{@"kind":@"torrent",@"url":@"https://example.test/a.mp4"},@{@"kind":@"video",@"url":@"file:///a.mp4"}]){
+        __block BOOL rejected=NO;PVXSubmitMedia(bad,^(NSDictionary *receipt,NSString *error){rejected=receipt==nil&&error.length>0;});Check(rejected,@"actual HTTP producer rejects source/torrent and non-HTTP input");
+    }
+    __block NSUInteger callbacks=0;__block NSString *uuid=nil;
+    // Exercise the production row action, then race two equivalent submissions.
+    [m openSource:source];
+    for(NSUInteger i=0;i<2;i++)PVXSubmitMagnet(@{@"url":[@"magnet:?xt=urn:btih:" stringByAppendingString:hash]},^(NSDictionary *receipt,NSString *error){
+        Check(receipt!=nil&&!error&&[receipt[@"deduplicated"] boolValue],@"serialized producer coalesces concurrent same-hash submissions");
+        if(uuid)Check([uuid isEqual:receipt[@"id"]],@"duplicate callbacks return same task UUID");uuid=receipt[@"id"];callbacks++;
+    });
+    Wait(100,^BOOL{return callbacks==2&&[m.feedback.text containsString:@"已加入队列"];},^{
+        NSString *path=PVXPath([NSString stringWithFormat:@"torrent-inbox/%@.plist",uuid]);NSDictionary *request=[NSDictionary dictionaryWithContentsOfFile:path];
+        Check([request[@"magnet"] isEqual:url]&&[request[@"infoHash"] isEqual:hash]&&[request[@"backend"] isEqual:@"torrent"]&&[request[@"kind"] isEqual:@"video"],@"real row action writes readable torrent queue preserving original URI");
+        Check(![NSFileManager.defaultManager fileExistsAtPath:PVXPath([NSString stringWithFormat:@"inbox/%@.plist",uuid])],@"magnet producer never writes HTTP inbox");
+        Check([NSFileManager.defaultManager contentsOfDirectoryAtPath:PVXPath(@"torrent-inbox") error:NULL].count==1,@"dedup leaves exactly one queued request");
+        NSDictionary *public=nil;for(NSDictionary *r in PVXScanVideoTasks())if([r[@"id"] isEqual:uuid])public=r;
+        Check([public[@"backend"] isEqual:@"torrent"]&&[public[@"sourceKey"] isEqual:request[@"sourceKey"]]&&[public[@"kind"] isEqual:@"video"],@"pending torrent inbox survives public task scan with backend and identity");
+        Check(PVXQueueControl(public,@"pause",NULL),@"pending torrent control enqueues without legacy PVEnqueueControl");
+        Check([NSFileManager.defaultManager contentsOfDirectoryAtPath:PVXPath(@"torrent-control") error:NULL].count==1,@"torrent control routes exclusively to torrent-control");
+        NSMutableDictionary *active=[request mutableCopy];active[@"state"]=@"downloading";active[@"phase"]=@"pieces";active[@"width"]=@1280;active[@"height"]=@720;active[@"progress"]=@0.5;active[@"peers"]=@3;
+        NSString *taskPath=PVXPath([NSString stringWithFormat:@"torrent-tasks/%@.plist",uuid]);
+        Check(PVXAtomic(active,taskPath,NULL),@"active torrent snapshot fixture written");
+        [NSFileManager.defaultManager removeItemAtPath:path error:NULL];
+        for(NSDictionary *r in PVXScanVideoTasks())if([r[@"id"] isEqual:uuid])Check([r[@"width"] isEqual:@1280]&&[r[@"height"] isEqual:@720]&&[r[@"progress"] isEqual:@0.5]&&[r[@"peers"] isEqual:@3]&&[r[@"phase"] isEqual:@"pieces"],@"active torrent scan preserves numeric media and peer progress");
+        PVXSubmitMagnet(source,^(NSDictionary *receipt,NSString *error){
+            Check(!error&&[receipt[@"id"] isEqual:uuid]&&[receipt[@"deduplicated"] boolValue],@"active torrent task is also deduplicated");
+            PVXSubmitMagnet(@{@"url":@"magnet:?xt=urn:btih:bad"},^(NSDictionary *invalid,NSString *failure){
+                Check(!invalid&&failure.length>0,@"invalid producer input returns error not success receipt");
+                [NSFileManager.defaultManager removeItemAtPath:taskPath error:NULL];
+                [NSFileManager.defaultManager removeItemAtPath:PVXPath(@"torrent-control") error:NULL];
+                // Force the actual producer's O_NOFOLLOW commit to fail, not merely validation.
+                NSString *savedRoot=Root;NSString *blocked=[savedRoot stringByAppendingPathComponent:@"producer-failure"];
+                [NSFileManager.defaultManager createDirectoryAtPath:blocked withIntermediateDirectories:YES attributes:nil error:NULL];
+                Check([NSFileManager.defaultManager createSymbolicLinkAtPath:[blocked stringByAppendingPathComponent:@"torrent-inbox"] withDestinationPath:[savedRoot stringByAppendingPathComponent:@"torrent-inbox"] error:NULL],@"producer failure fixture symlinks inbox");
+                Root=blocked;
+                PVXSubmitMagnet(source,^(NSDictionary *failedReceipt,NSString *writeError){
+                    Root=savedRoot;
+                    Check(!failedReceipt&&writeError.length>0,@"producer rejects symlink-backed commit with error, never a false success receipt");
+                    [NSFileManager.defaultManager removeItemAtPath:blocked error:NULL];done();
+                });
+            });
+        });
+    },@"native row queue receipt and concurrent dedup");
+    }]; });
 }
 - (void)testSelectionAfterFilters {
         PVXManager *m=self.manager;

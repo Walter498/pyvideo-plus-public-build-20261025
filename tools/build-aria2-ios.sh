@@ -7,82 +7,79 @@ SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 mkdir -p "$OUT"
 ARIA2_REF="9e7273583f83e881e3ec067b523ba88724088d2f"
 if [ ! -d "$SRC/.git" ]; then
-  rm -rf "$SRC"
+  mkdir -p "$SRC"
   git init "$SRC" >/dev/null
   git -C "$SRC" remote add origin https://github.com/aria2/aria2.git
-  git -C "$SRC" fetch --depth 1 origin "$ARIA2_REF" >/dev/null
-  git -C "$SRC" checkout --detach FETCH_HEAD >/dev/null
 fi
 cd "$SRC"
-if [ "$(git rev-parse HEAD)" != "$ARIA2_REF" ]; then
-  git fetch --depth 1 origin "$ARIA2_REF" >/dev/null
-  git checkout --detach FETCH_HEAD >/dev/null
-fi
+git fetch --depth 1 origin "$ARIA2_REF" >/dev/null
+git checkout --detach "$ARIA2_REF" >/dev/null
 git reset --hard "$ARIA2_REF" >/dev/null
 git clean -fdx >/dev/null
+test "$(git rev-parse HEAD)" = "$ARIA2_REF"
+# Distribute the exact upstream source, including licenses, plus our build recipe.
+git archive --format=tar --prefix=aria2/ "$ARIA2_REF" | gzip -n > "$OUT/aria2-source.tar.gz"
+for license in COPYING AUTHORS LICENSE.OpenSSL; do cp "$license" "$OUT/$license"; done
+# Upstream has no COPYRIGHT file: retain its copyright-bearing source notice.
+if [ -f COPYRIGHT ]; then cp COPYRIGHT "$OUT/COPYRIGHT"; else
+  git show "$ARIA2_REF:src/main.cc" > "$OUT/COPYRIGHT"
+fi
+cp "$ROOT/tools/build-aria2-ios.sh" "$OUT/build-aria2-ios.sh"
+printf '%s\n' 'aria2 1.37.0; GPL-2.0-or-later with upstream exceptions; see COPYING and source headers.' \
+  "Source: https://github.com/aria2/aria2.git commit $ARIA2_REF" \
+  "Retrieve: git clone https://github.com/aria2/aria2.git; git checkout $ARIA2_REF" \
+  'Exact source: aria2-source.tar.gz. Build recipe: build-aria2-ios.sh. No source patches.' \
+  'TLS backend: Apple SecureTransport (Security + CoreFoundation); no OpenSSL linked.' \
+  'LICENSE.OpenSSL is retained as an upstream notice, not a linked-library claim.' > "$OUT/NOTICE"
 GETTEXT_PREFIX="$(brew --prefix gettext 2>/dev/null || true)"
 if [ -n "$GETTEXT_PREFIX" ]; then export PATH="$GETTEXT_PREFIX/bin:$GETTEXT_PREFIX/sbin:$PATH"; fi
 command -v autoreconf >/dev/null
 command -v autopoint >/dev/null || { echo 'gettext autopoint is required' >&2; exit 1; }
 autoreconf -f -i
-# aria2's no-TLS configure path in current release leaves two teardown calls
-# outside ENABLE_SSL; remove those calls for the iOS no-TLS build.
-python3 - <<'PY'
-from pathlib import Path
-p=Path('src/Platform.cc')
-if not p.is_file(): raise SystemExit('aria2 source layout changed: missing src/Platform.cc')
-s=p.read_text()
-for needle in ('  SocketCore::setClientTLSContext(nullptr);\n','  SocketCore::setServerTLSContext(nullptr);\n'):
-    if s.count(needle)!=1: raise SystemExit('aria2 no-TLS patch anchor changed: '+needle.strip())
-    s=s.replace(needle,'')
-p.write_text(s)
-q=Path('src/UTMetadataPostDownloadHandler.cc')
-if not q.is_file(): raise SystemExit('aria2 source layout changed: missing metadata handler')
-t=q.read_text()
-needle='if (util::saveAs(filename, torrent)) {'
-if t.count(needle)!=1: raise SystemExit('aria2 metadata save anchor changed')
-t=t.replace(needle,'if (util::saveAs(filename, torrent, true)) {')
-q.write_text(t)
-PY
-if [ -f Makefile ]; then make distclean >/dev/null 2>&1 || true; fi
-rm -f config.status
 CC="xcrun --sdk iphoneos clang -arch arm64e -isysroot $SDK -miphoneos-version-min=15.0"
 CXX="xcrun --sdk iphoneos clang++ -arch arm64e -isysroot $SDK -miphoneos-version-min=15.0 -stdlib=libc++"
-CFLAGS="-Os -fvisibility=hidden"
-CXXFLAGS="-Os -fvisibility=hidden -stdlib=libc++"
-LDFLAGS="-arch arm64e -isysroot $SDK -miphoneos-version-min=15.0 -framework Security"
-PKG_CONFIG=/usr/bin/false
-export PKG_CONFIG
-LIBS="-framework Security"
-export LIBS
-./configure --host=arm-apple-darwin --disable-werror --enable-static --disable-shared --disable-nls --disable-libxml2 --without-gnutls --without-openssl --without-appletls --without-wintls --without-libgcrypt --without-libcares --disable-rpc --disable-websocket --disable-metalink --without-sqlite3 CC="$CC" CXX="$CXX" CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS -Wno-deprecated-declarations" LDFLAGS="$LDFLAGS"
+CFLAGS="-Os -fvisibility=hidden -Wno-deprecated-declarations"
+CXXFLAGS="$CFLAGS -stdlib=libc++"
+LDFLAGS="-arch arm64e -isysroot $SDK -miphoneos-version-min=15.0 -framework Security -framework CoreFoundation"
+export PKG_CONFIG=/usr/bin/false
+export LIBS="-framework Security -framework CoreFoundation"
+./configure --host=arm-apple-darwin --disable-werror --enable-static --disable-shared --disable-nls --disable-libxml2 --without-gnutls --without-openssl --with-appletls --without-wintls --without-libgcrypt --without-libcares --disable-rpc --disable-websocket --disable-metalink --without-sqlite3 CC="$CC" CXX="$CXX" CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" LDFLAGS="$LDFLAGS"
+# Fail closed if configure silently omitted HTTPS support.
+rg '^#define HAVE_APPLETLS 1$' config.h
+rg '^#define ENABLE_SSL 1$' config.h
 make -j2
 BIN="$(python3 - "$SRC" <<'PY'
-import os, subprocess, sys
-root=sys.argv[1]
-hits=[]
-for directory, _, names in os.walk(root):
-    if "aria2c" not in names:
-        continue
-    path=os.path.join(directory,"aria2c")
-    if not os.access(path,os.X_OK):
-        continue
-    try:
-        description=subprocess.check_output(["file","-b",path],text=True)
-    except Exception:
-        continue
-    if "Mach-O" in description and "executable" in description:
-        hits.append(path)
-if not hits:
-    raise SystemExit("aria2 Mach-O executable not found after link")
-hits.sort(key=lambda p:("/.libs/" not in p, len(p)))
-print(hits[0])
+from pathlib import Path
+import struct,sys
+for p in (Path(sys.argv[1])/'src/.libs/aria2c', Path(sys.argv[1])/'src/aria2c'):
+    if not p.is_file(): continue
+    b=p.read_bytes()
+    if len(b)<32: continue
+    magic,cpu,sub,kind=struct.unpack_from('<IIII',b)
+    if magic==0xfeedfacf and cpu==0x100000c and sub&0xffffff==2 and kind==2:
+        print(p);break
+else: raise SystemExit('no arm64e Mach-O executable in explicit aria2 output candidates')
 PY
 )"
 cp "$BIN" "$ROOT/build/PyVideoAria2c"
 chmod 755 "$ROOT/build/PyVideoAria2c"
 file "$ROOT/build/PyVideoAria2c" | tee "$OUT/aria2-file.txt"
-case "$(file -b "$ROOT/build/PyVideoAria2c")" in
-  *Mach-O*) : ;;
-  *) echo 'aria2 output is not a Mach-O executable' >&2; exit 1;;
-esac
+otool -L "$ROOT/build/PyVideoAria2c" | tee "$OUT/aria2-dependencies.txt"
+python3 - "$OUT" "$ARIA2_REF" "$SDK" <<'PY'
+from pathlib import Path
+import hashlib,json,re,subprocess,sys
+out=Path(sys.argv[1]);deps=(out/'aria2-dependencies.txt').read_text()
+paths=[line.strip().split(' (',1)[0] for line in deps.splitlines()[1:] if line.strip()]
+assert paths and all(p.startswith(('/usr/lib/','/System/Library/Frameworks/')) for p in paths),paths
+assert not any(re.search(r'lib(ssl|crypto|gnutls|gcrypt)',p) for p in paths),paths
+assert any('/Security.framework/' in p for p in paths),paths
+assert any('/CoreFoundation.framework/' in p for p in paths),paths
+files=['COPYING','COPYRIGHT','AUTHORS','LICENSE.OpenSSL','NOTICE','build-aria2-ios.sh','aria2-source.tar.gz','aria2-file.txt','aria2-dependencies.txt']
+info={'engine':'aria2','version':'1.37.0','gitCommit':sys.argv[2],
+      'sourceURL':'https://github.com/aria2/aria2.git','sourcePatches':[],
+      'tlsBackend':'AppleTLS','architecture':'arm64e','minimumIOS':'15.0',
+      'sdk':sys.argv[3],'compiler':subprocess.check_output(['xcrun','clang','--version'],text=True),
+      'dependencies':paths,'files':{n:hashlib.sha256((out/n).read_bytes()).hexdigest() for n in files}}
+assert re.search(r'AC_INIT\(\[aria2\],\[1\.37\.0\]',(out/'src/configure.ac').read_text())
+(out/'provenance.json').write_text(json.dumps(info,indent=2)+'\n')
+PY

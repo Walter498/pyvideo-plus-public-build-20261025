@@ -4,7 +4,7 @@ import hashlib,subprocess
 
 def source_contract(root):
     root=Path(root)
-    files=subprocess.check_output(['git','ls-files','src','storage','worker','btworker','config','build-macos.py','package.py','tools'],cwd=root,text=True).splitlines()
+    files=subprocess.check_output(['git','ls-files','src','storage','worker','btworker','config','resources','depiction','build-macos.py','package.py','tools','tests/package-contract-signatures.py','.github/workflows/build.yml'],cwd=root,text=True).splitlines()
     digest=hashlib.sha256()
     for name in sorted(files):
         digest.update(name.encode()+b'\0'+(root/name).read_bytes()+b'\0')

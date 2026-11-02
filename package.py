@@ -14,10 +14,14 @@ STAGE.mkdir()
 for archive,root in [('data',STAGE),('control',STAGE/'DEBIAN')]:
  root.mkdir(exist_ok=True)
  with tarfile.open(ORIG/'archive'/(archive+'.tar.xz')) as t:
+  seen=set()
   for m in t.getmembers():
    name=m.name.removeprefix('./')
    if not name:continue
    assert '..' not in Path(name).parts and not Path(name).is_absolute()
+   normalized=str(Path(name))
+   assert normalized not in seen,'duplicate base archive path: '+normalized
+   seen.add(normalized)
    target=root/name
    if m.isdir():target.mkdir(parents=True,exist_ok=True)
    elif m.isfile():target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(t.extractfile(m).read())
@@ -31,6 +35,27 @@ for name in ['PyVideoPlus.dylib','PyVideoPhotoWorker','PyVideoBTWorker','PyVideo
  p=P/'build'/name;data=p.read_bytes();cpu,sub=struct.unpack_from('<II',data,4)
  assert cpu==0x100000c and sub&0xffffff==2,'not genuine arm64e: '+name
  assert hashlib.sha256(data).hexdigest()==cloud[name]['sha256'],'artifact differs from cloud signature: '+name
+ assert cloud[name].get('signatureVerified') is True,'cloud signature verification missing'
+ if name in ('PyVideoBTWorker','PyVideoAria2c'):
+  assert cloud[name]['entitlementsSHA256']==hashlib.sha256((P/'worker/torrent-entitlements.plist').read_bytes()).hexdigest()
+import runpy
+verify_signature=runpy.run_path(str(P/'tests/package-contract-signatures.py'))['verify_signature']
+for name in ['PyVideoPlus.dylib','PyVideoPhotoWorker','PyVideoBTWorker','PyVideoAria2c','PyVideoStorage.dylib']:
+ ent=verify_signature((P/'build'/name).read_bytes())
+ if name in ('PyVideoBTWorker','PyVideoAria2c'):assert ent==plistlib.loads((P/'worker/torrent-entitlements.plist').read_bytes())
+third=P/'build/third-party/aria2'
+provenance_bytes=(third/'provenance.json').read_bytes()
+assert hashlib.sha256(provenance_bytes).hexdigest()==cloud['_aria2ProvenanceSHA256']
+provenance=json.loads(provenance_bytes)
+assert provenance==cloud['_aria2']
+assert provenance['gitCommit']=='9e7273583f83e881e3ec067b523ba88724088d2f'
+assert provenance['version']=='1.37.0' and provenance['tlsBackend']=='AppleTLS' and provenance['sourcePatches']==[]
+notice_root=Path('Library/Application Support/PyVideo/third-party/aria2')
+for filename,digest in provenance['files'].items():
+ assert Path(filename).name==filename,'unsafe provenance filename'
+ assert hashlib.sha256((third/filename).read_bytes()).hexdigest()==digest
+ place(third/filename,notice_root/filename)
+place(third/'provenance.json',notice_root/'provenance.json')
 place(P/'build/PyVideoPlus.dylib','Library/MobileSubstrate/DynamicLibraries/PyVideoPlus.dylib',0o755)
 place(P/'build/PyVideoPhotoWorker','Applications/PyVideoAgent.app/PyVideoPhotoWorker',0o755)
 place(P/'build/PyVideoBTWorker','Applications/PyVideoAgent.app/PyVideoBTWorker',0o755)
@@ -38,7 +63,7 @@ place(P/'build/PyVideoAria2c','Applications/PyVideoAgent.app/PyVideoAria2c',0o75
 place(P/'resources/MediaCollector.js','Library/Application Support/PyVideo/MediaCollector.js')
 for old in ['screenshot-1.jpeg','screenshot-2.png','screenshot-3.png','screenshot-4.png','screenshot-5.png']:
  (STAGE/'Library/Application Support/PyVideo/depiction'/old).unlink(missing_ok=True)
-for depiction in (P/'depiction').rglob('*'):
+for depiction in (Path(x) for x in subprocess.check_output(['rg','--files',str(P/'depiction')],text=True).splitlines()):
  if depiction.is_file():place(depiction,Path('Library/Application Support/PyVideo/depiction')/depiction.relative_to(P/'depiction'))
 
 place(P/'build/PyVideoStorage.dylib','Applications/PyVideoAgent.app/PyVideoStorage.dylib',0o755)
@@ -83,6 +108,9 @@ agentpatch={'path':'Applications/PyVideoAgent.app/PyVideoAgent','exportContract'
 addon={'Filter':{'Bundles':['com.apple.mobilesafari']}}
 (STAGE/'Library/MobileSubstrate/DynamicLibraries/PyVideoPlus.plist').write_bytes(plistlib.dumps(addon,fmt=plistlib.FMT_BINARY))
 job={'Label':'com.crctdd.pyvideo.photo-worker','ProgramArguments':['/Applications/PyVideoAgent.app/PyVideoPhotoWorker','--worker'],'UserName':'mobile','RunAtLoad':True,'KeepAlive':True,'ThrottleInterval':10,'ProcessType':'Background','JetsamProperties':{'JetsamMemoryLimit':192}}
+photo=STAGE/'Library/LaunchDaemons/com.crctdd.pyvideo.photo-worker.plist'
+photo.parent.mkdir(parents=True,exist_ok=True)
+photo.write_bytes(plistlib.dumps(job,fmt=plistlib.FMT_BINARY));photo.chmod(0o644)
 torrent_job={'Label':'com.crctdd.pyvideo.torrent-worker','ProgramArguments':['/Applications/PyVideoAgent.app/PyVideoBTWorker','--worker'],'UserName':'mobile','RunAtLoad':True,'KeepAlive':True,'ThrottleInterval':10,'ProcessType':'Background','JetsamProperties':{'JetsamMemoryLimit':256}}
 torrent=STAGE/'Library/LaunchDaemons/com.crctdd.pyvideo.torrent-worker.plist';torrent.write_bytes(plistlib.dumps(torrent_job,fmt=plistlib.FMT_BINARY));torrent.chmod(0o644)
 control=STAGE/'DEBIAN/control';raw=control.read_text();raw=raw.replace('Name: PyVideo\n','Name: Safari亚瑟下载\n').replace('Version: 0.0.3\n',f'Version: {VERSION}\n');start=raw.index('Description:');end=raw.index('Maintainer:',start);raw=raw[:start]+'''Description: 让Safari获得某些类似亚瑟浏览器的功能，能够在画中画中直接下载影片，或者在网站中采集图片及影片以下载，长按搜索栏或点击画中画中的菜单开始使用\n'''+raw[end:];raw=re.sub(r'^Author: .*$', 'Author: 水甲嫩鸡', raw, flags=re.M);raw=re.sub(r'^Maintainer: .*$', 'Maintainer: 水甲嫩鸡', raw, flags=re.M);raw+='Depiction: file:///Library/Application%20Support/PyVideo/depiction/index.html\n';control.write_text(raw)
@@ -100,8 +128,13 @@ pv_stage=photo-worker-registration
 pv_photo_job="$pv_prefix/Library/LaunchDaemons/com.crctdd.pyvideo.photo-worker.plist"
 chown root:wheel "$pv_photo_job"
 chmod 644 "$pv_photo_job"
-if [ -n "$pv_prefix" ] && [ -x /usr/libexec/PlistBuddy ]; then
-  /usr/libexec/PlistBuddy -c "Set :ProgramArguments:0 $pv_app/PyVideoPhotoWorker" "$pv_photo_job"
+test -f "$pv_photo_job"
+test -x "$pv_app/PyVideoPhotoWorker"
+if [ -n "$pv_prefix" ]; then
+  pv_plistbuddy=/usr/libexec/PlistBuddy
+  if [ -x "$pv_prefix/usr/libexec/PlistBuddy" ]; then pv_plistbuddy="$pv_prefix/usr/libexec/PlistBuddy"; fi
+  test -x "$pv_plistbuddy"
+  "$pv_plistbuddy" -c "Set :ProgramArguments:0 $pv_app/PyVideoPhotoWorker" "$pv_photo_job"
 fi
 launchctl bootout system/com.crctdd.pyvideo.photo-worker >/dev/null 2>&1 || true
 launchctl bootstrap system "$pv_photo_job" || launchctl load "$pv_photo_job"
@@ -109,8 +142,11 @@ pv_stage=torrent-worker-registration
 pv_torrent_job="$pv_prefix/Library/LaunchDaemons/com.crctdd.pyvideo.torrent-worker.plist"
 chown root:wheel "$pv_torrent_job"
 chmod 644 "$pv_torrent_job"
-if [ -n "$pv_prefix" ] && [ -x /usr/libexec/PlistBuddy ]; then
-  /usr/libexec/PlistBuddy -c "Set :ProgramArguments:0 $pv_app/PyVideoBTWorker" "$pv_torrent_job"
+test -f "$pv_torrent_job"
+test -x "$pv_app/PyVideoBTWorker"
+test -x "$pv_app/PyVideoAria2c"
+if [ -n "$pv_prefix" ]; then
+  "$pv_plistbuddy" -c "Set :ProgramArguments:0 $pv_app/PyVideoBTWorker" "$pv_torrent_job"
 fi
 launchctl bootout system/com.crctdd.pyvideo.torrent-worker >/dev/null 2>&1 || true
 launchctl bootstrap system "$pv_torrent_job" || launchctl load "$pv_torrent_job"
@@ -120,7 +156,7 @@ exit 0
 pre=STAGE/'DEBIAN/prerm';text=pre.read_text();text=text.replace('  launchctl bootout system/com.crctdd.pyvideo.worker','  launchctl bootout system/com.crctdd.pyvideo.torrent-worker >/dev/null 2>&1 || true\n  launchctl bootout system/com.crctdd.pyvideo.photo-worker >/dev/null 2>&1 || true\n  launchctl bootout system/com.crctdd.pyvideo.worker');pre.write_text(text);pre.chmod(0o755)
 # Original core binaries, Collector.js and routing filters are byte-identical.
 unchanged=[]
-for original in (ORIG/'rootfs').rglob('*'):
+for original in (Path(x) for x in subprocess.check_output(['rg','--files','-uuu',str(ORIG/'rootfs')],text=True).splitlines()):
  if original.is_file():
   rel=original.relative_to(ORIG/'rootfs')
   if str(rel)=='Applications/PyVideoAgent.app/PyVideoAgent':continue
@@ -163,5 +199,5 @@ with out.open('wb') as ar:
  for name,data in [('debian-binary',b'2.0\n'),('control.tar.xz',archive_bytes(True)),('data.tar.xz',archive_bytes(False))]:
   header=f'{name+"/":<16}{0:<12}{0:<6}{0:<6}{"100644":<8}{len(data):<10}`\n';assert len(header)==60;ar.write(header.encode());ar.write(data)
   if len(data)%2:ar.write(b'\n')
-info={'name':out.name,'size':out.stat().st_size,'sha256':hashlib.sha256(out.read_bytes()).hexdigest(),'originalPayloadFilesUnchanged':unchanged,'patchedOriginal':agentpatch,'build':cloud,'testedOnDevice':False,'sourceCommit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=P,text=True).strip()}
+info={'name':out.name,'version':VERSION,'size':out.stat().st_size,'sha256':hashlib.sha256(out.read_bytes()).hexdigest(),'originalPayloadFilesUnchanged':unchanged,'protectedPayloadSHA256':{rel:hashlib.sha256((STAGE/rel).read_bytes()).hexdigest() for rel in unchanged},'patchedOriginal':agentpatch,'build':cloud,'testedOnDevice':False,'sourceCommit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=P,text=True).strip()}
 (DIST/'manifest.json').write_text(json.dumps(info,ensure_ascii=False,indent=2)+'\n');print(json.dumps(info,ensure_ascii=False,indent=2))
