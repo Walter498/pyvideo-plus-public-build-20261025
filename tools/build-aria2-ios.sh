@@ -39,7 +39,9 @@ autoreconf -f -i
 CC="xcrun --sdk iphoneos clang -arch arm64e -isysroot $SDK -miphoneos-version-min=15.0"
 CXX="xcrun --sdk iphoneos clang++ -arch arm64e -isysroot $SDK -miphoneos-version-min=15.0 -stdlib=libc++"
 CFLAGS="-Os -fvisibility=hidden -Wno-deprecated-declarations"
-CXXFLAGS="$CFLAGS -stdlib=libc++"
+# iOS does not expose the macOS-only server DH-parameter setter. This
+# upstream switch omits that server optimization; HTTPS client TLS is retained.
+CXXFLAGS="$CFLAGS -stdlib=libc++ -DCIPHER_NO_DHPARAM"
 LDFLAGS="-arch arm64e -isysroot $SDK -miphoneos-version-min=15.0 -framework Security -framework CoreFoundation"
 export PKG_CONFIG=/usr/bin/false
 export LIBS="-framework Security -framework CoreFoundation"
@@ -77,7 +79,7 @@ assert any('/CoreFoundation.framework/' in p for p in paths),paths
 files=['COPYING','COPYRIGHT','AUTHORS','LICENSE.OpenSSL','NOTICE','build-aria2-ios.sh','aria2-source.tar.gz','aria2-file.txt','aria2-dependencies.txt']
 info={'engine':'aria2','version':'1.37.0','gitCommit':sys.argv[2],
       'sourceURL':'https://github.com/aria2/aria2.git','sourcePatches':[],
-      'tlsBackend':'AppleTLS','architecture':'arm64e','minimumIOS':'15.0',
+      'tlsBackend':'AppleTLS','compileDefines':['CIPHER_NO_DHPARAM'],'architecture':'arm64e','minimumIOS':'15.0',
       'sdk':sys.argv[3],'compiler':subprocess.check_output(['xcrun','clang','--version'],text=True),
       'dependencies':paths,'files':{n:hashlib.sha256((out/n).read_bytes()).hexdigest() for n in files}}
 assert re.search(r'AC_INIT\(\[aria2\],\[1\.37\.0\]',(out/'src/configure.ac').read_text())

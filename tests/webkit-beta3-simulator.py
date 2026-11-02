@@ -136,7 +136,7 @@ def main():
             item.unlink()
     env = dict(os.environ, SIMCTL_CHILD_PVX_FIXTURE_URL=url)
     try:
-        run(['xcrun', 'simctl', 'launch', '--terminate-running-process', udid, BUNDLE], env=env)
+        run(['xcrun', 'simctl', 'launch', udid, BUNDLE], env=env)
         deadline = time.monotonic() + 150
         result = docs / 'webkit-beta3-result.txt'
         captured = set()
@@ -187,7 +187,10 @@ def main():
     finally:
         server.shutdown()
         # Simulator test bundle only; leave framebuffer/evidence intact on disk.
-        subprocess.run(['xcrun', 'simctl', 'terminate', udid, BUNDLE], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            subprocess.run(['xcrun', 'simctl', 'terminate', udid, BUNDLE], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+        except subprocess.TimeoutExpired:
+            (out / 'cleanup-warning.txt').write_text('simctl terminate exceeded 30 seconds; runtime result is recorded separately.\n')
 
 
 if __name__ == '__main__':
