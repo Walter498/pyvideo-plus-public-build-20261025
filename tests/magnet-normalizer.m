@@ -19,6 +19,8 @@ int main(void) { @autoreleasepool {
     Check(!PVXMagnetInfoHash(longURI),@"reject excessive length");
     Check(PVXTorrentURL(@"https://example.test/file.TORRENT?x=1#fragment"),@"torrent URL recognized independently of query");
     Check(!PVXTorrentURL(@"https://example.test/file.mp4?x=.torrent"),@"query does not change media extension");
+    NSString *engine=PVXMagnetEngineURI(@"MAGNET:?XT=urn%3Abtih%3A0102030405060708090A0B0C0D0E0F1011121314&TR=https%3A%2F%2Ftracker.test%2Fa%3Fsig%3DA%2BB");
+    Check([engine isEqual:@"magnet:?xt=urn:btih:0102030405060708090a0b0c0d0e0f1011121314&tr=https%3A%2F%2Ftracker.test%2Fa%3Fsig%3DA%2BB"],@"engine routing canonicalizes case without changing encoded tracker tokens");
     NSLog(@"PASS %lu native Foundation magnet assertions",(unsigned long)checks);
     return 0;
 }}

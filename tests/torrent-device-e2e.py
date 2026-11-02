@@ -196,6 +196,7 @@ def main():
         subprocess.run([sys.executable,args.swarm,'fixture','--root',str(multi_root),
                         '--mp4',args.mp4,'--announce',announce,'--pad-bytes','2097152','--multi'],check=True,timeout=30)
         multi=json.loads((multi_root/'fixture.json').read_text())
+        multi['magnet']=multi['magnet'].replace('magnet:?xt=', 'MAGNET:?XT=',1).replace('&tr=','&TR=')
         multi_seed=spawn([engine,'--no-conf=true','--check-integrity=true','--bt-hash-check-seed=true',
                           '--enable-dht=false','--enable-dht6=false','--bt-enable-lpd=false','--seed-time=30',
                           '--seed-ratio=0.0','--summary-interval=1','--console-log-level=notice',

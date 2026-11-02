@@ -24,6 +24,21 @@ static inline NSString *PVXMagnetInfoHash(id value) {
  }
  return result;
 }
+// Normalize only engine routing fields; preserve the original URI in requests
+// and do not decode tracker query strings or signed URL values.
+static inline NSString *PVXMagnetEngineURI(id value) {
+ NSString *hash=PVXMagnetInfoHash(value);if(!hash)return nil;
+ NSMutableString *uri=[NSMutableString stringWithFormat:@"magnet:?xt=urn:btih:%@",hash];
+ for(NSString *part in [[value substringFromIndex:8] componentsSeparatedByString:@"&"]){
+  NSRange eq=[part rangeOfString:@"="];if(eq.location==NSNotFound)continue;
+  NSString *name=[[part substringToIndex:eq.location] stringByRemovingPercentEncoding];
+  NSString *lower=name.lowercaseString;if([lower isEqual:@"xt"])continue;
+  if([@[@"tr",@"dn",@"xl",@"xs",@"ws",@"so",@"kt"] containsObject:lower])
+   [uri appendFormat:@"&%@=%@",lower,[part substringFromIndex:eq.location+1]];
+  else if(part.length)[uri appendFormat:@"&%@",part];
+ }
+ return uri;
+}
 static inline BOOL PVXTorrentURL(id value) {
  if (![value isKindOfClass:NSString.class])return NO;
  return [[[[NSURLComponents componentsWithString:value] path] pathExtension].lowercaseString isEqual:@"torrent"];
