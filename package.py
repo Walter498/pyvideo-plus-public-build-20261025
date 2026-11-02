@@ -186,7 +186,7 @@ def archive_bytes(iscontrol):
  for rel in modes:
   if rel.startswith('DEBIAN/')!=iscontrol:continue
   relative=rel[7:] if iscontrol else rel
-  if (root/relative).is_dir():dirs.add(relative)
+  if relative not in ('','.') and (root/relative).is_dir():dirs.add(relative)
  buf=io.BytesIO()
  with tarfile.open(fileobj=buf,mode='w:xz',preset=3,format=tarfile.GNU_FORMAT) as tf:
   for d in ['.']+sorted(dirs):

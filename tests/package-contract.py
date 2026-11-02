@@ -70,4 +70,20 @@ class Contract(unittest.TestCase):
         self.assertIn('chown mobile:mobile',extra);self.assertIn('chmod 700',extra)
         subprocess.run(['sh','-n'],input='#!/bin/sh\n'+extra,text=True,check=True)
 
+    def test_archive_root_unique(self):
+        tree=ast.parse((ROOT/'package.py').read_text())
+        fn=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='archive_bytes')
+        with tempfile.TemporaryDirectory() as d:
+            stage=Path(d);(stage/'DEBIAN').mkdir()
+            control=stage/'DEBIAN/control';control.write_text('test control')
+            data=stage/'payload';data.write_bytes(b'data')
+            ns={'STAGE':stage,'Path':Path,'tarfile':tarfile,'io':io,'allfiles':[control,data],
+                'modes':{'.':0o755,'DEBIAN/.':0o755,'DEBIAN/control':0o644,'payload':0o644}}
+            exec(compile(ast.Module(body=[fn],type_ignores=[]),'package.py','exec'),ns)
+            for iscontrol in (False,True):
+                with tarfile.open(fileobj=io.BytesIO(ns['archive_bytes'](iscontrol))) as tf:
+                    names=[m.name for m in tf.getmembers()]
+                    self.assertEqual(names.count('.'),1)
+                    self.assertEqual(len(names),len(set(names)))
+
 if __name__=='__main__':unittest.main()
