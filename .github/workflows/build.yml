@@ -73,7 +73,7 @@ jobs:
         run: sh tests/export-beta3-check.sh
       - name: Execute real private Torrent swarm and worker controls
         run: |
-          xcrun --sdk macosx clang++ -std=c++17 -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations -Isrc btworker/main.mm -framework Foundation -framework AVFoundation -framework CoreMedia -o "$RUNNER_TEMP/PyVideoBTWorker.host"
+          xcrun --sdk macosx clang++ -std=c++17 -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations -Isrc btworker/main.mm -framework Foundation -framework AVFoundation -framework CoreMedia -framework CoreGraphics -o "$RUNNER_TEMP/PyVideoBTWorker.host"
           ffmpeg -y -loglevel error -f lavfi -i color=c=black:s=64x64:d=1 -c:v libx264 -pix_fmt yuv420p -movflags +faststart "$RUNNER_TEMP/torrent-fixture.mp4"
           python3 tests/torrent-device-e2e.py --worker "$RUNNER_TEMP/PyVideoBTWorker.host" --engine "$(command -v aria2c)" --mp4 "$RUNNER_TEMP/torrent-fixture.mp4" --root "$RUNNER_TEMP/pvx-bt-e2e"
       - name: Upload private Torrent regression evidence
