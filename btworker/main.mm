@@ -85,7 +85,7 @@ struct PVXWorker {
     void controls(){
         NSString *dir=PVXJoin(root,@"torrent-control");
         for(NSString *name in PVXNames(dir)){
-            if(![name.pathExtension isEqual:@"plist"])continue;NSString *path=PVXJoin(dir,name);NSDictionary *c=PVXRead(path);NSString *id=c[@"target"],*action=c[@"action"];
+            if([name hasPrefix:@"."]||![name.pathExtension isEqual:@"plist"]||!PVXID(name.stringByDeletingPathExtension))continue;NSString *path=PVXJoin(dir,name);NSDictionary *c=PVXRead(path);NSString *id=c[@"target"],*action=c[@"action"];
             if(PVXID(c[@"id"])&&[name.stringByDeletingPathExtension isEqual:c[@"id"]]&&(c.count==3||(c.count==4&&[c[@"created"] isKindOfClass:NSNumber.class]&&isfinite([c[@"created"] doubleValue])))&&PVXID(id)&&[action isKindOfClass:NSString.class]){
                 NSDictionary *s=state(id);BOOL deleted=[s[@"state"] isEqual:@"deleting"]||[s[@"state"] isEqual:@"deleted"]||[s[@"state"] isEqual:@"cancelled"];BOOL running=[active isEqual:id];
                 if([action isEqual:@"delete"]){

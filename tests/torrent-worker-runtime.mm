@@ -48,6 +48,11 @@ int main(){@autoreleasepool{
     NSString *sidecar=PVXJoin(w.output(id),@"movie.mp4.aria2");assert([bits writeToFile:sidecar atomically:YES]);assert(!w.noSidecars());
     put(bits,54,192,1);assert([bits writeToFile:sidecar atomically:YES]);assert(w.noSidecars());
     NSString *unknown=PVXJoin(w.output(id),@"unknown.aria2");assert([bits writeToFile:unknown atomically:YES]);assert(!w.noSidecars());unlink(unknown.fileSystemRepresentation);
+    // Queue consumers must never unlink an in-progress producer temporary file.
+    assert(PVXDir(PVXJoin(temp,@"torrent-control")));
+    NSString *commandID=NSUUID.UUID.UUIDString;
+    NSString *pendingCommand=PVXJoin(PVXJoin(temp,@"torrent-control"),[@".test-write-" stringByAppendingFormat:@"%@.plist",commandID]);
+    assert(PVXWrite(pendingCommand,@{@"id":commandID,@"target":id,@"action":@"pause"}));w.controls();assert(PVXExists(pendingCommand));
     // Nonzero and signal termination must remain nonzero through the supervisor.
     int lock=open(PVXJoin(temp,@"lock").fileSystemRepresentation,O_CREAT|O_RDWR,0600);assert(lock>=0);
     PVXChild child=PVXSpawn(@[@"/bin/sh",@"-c",@"exit 9"],lock);assert(child.pid>0);int status=0;assert(waitpid(child.pid,&status,0)==child.pid);assert(WIFEXITED(status)&&WEXITSTATUS(status)==9);close(child.life);close(child.log);

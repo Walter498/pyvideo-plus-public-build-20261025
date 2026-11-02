@@ -27,7 +27,7 @@ def physical(path):
 
 def atomic_plist(path, obj):
     path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_name('.test-write-' + path.name)
+    temp = path.with_name('.test-write-' + path.name + '.pending')
     with open(temp, 'wb') as f:
         plistlib.dump(obj, f, fmt=plistlib.FMT_BINARY)
         f.flush(); os.fsync(f.fileno())
