@@ -136,7 +136,7 @@ def main():
             item.unlink()
     env = dict(os.environ, SIMCTL_CHILD_PVX_FIXTURE_URL=url)
     try:
-        run(['xcrun', 'simctl', 'launch', udid, BUNDLE], env=env)
+        run(['xcrun', 'simctl', 'launch', '--terminate-running-process', udid, BUNDLE], env=env)
         deadline = time.monotonic() + 150
         result = docs / 'webkit-beta3-result.txt'
         captured = set()
